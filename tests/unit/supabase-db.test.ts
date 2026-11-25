@@ -128,6 +128,45 @@ describe('SupabaseDb', () => {
     expect(String(err)).not.toContain('sb_secret_test');
   });
 
+  it('changes the event through the locking update_current_event function', async () => {
+    const ev = { title: 'T', date: '2027-02-27', time: '5pm', venue: 'V', capacity: 50 };
+    const { db, seen } = fakeSupabase([
+      { body: [{ status: 'ok', reserved: 3 }] },
+      { body: [{ id: 1, ...ev, is_current: true }] },
+      { body: [{ status: 'too_low', reserved: 60 }] },
+    ]);
+    expect(await db.updateEvent(ev)).toEqual({ ok: true, event: ev });
+    expect(seen[0]).toMatchObject({
+      method: 'POST',
+      path: '/rest/v1/rpc/update_current_event',
+      body: { p_title: 'T', p_date: '2027-02-27', p_time: '5pm', p_venue: 'V', p_capacity: 50 },
+    });
+    expect(await db.updateEvent(ev)).toEqual({ ok: false, reserved: 60 });
+  });
+
+  it('reads every page of a long list instead of stopping at the response limit', async () => {
+    const row = (id: number) => ({
+      id,
+      reference: `JP-${id}`,
+      name: 'A',
+      email: `a${id}@b.co`,
+      currency: 'NGN',
+      amount: 100,
+      status: 'pending',
+      marked_sent_at: null,
+      reviewed_at: null,
+      created_at: '2027-01-01T00:00:00Z',
+    });
+    const { db, seen } = fakeSupabase([
+      { body: Array.from({ length: 1000 }, (_, i) => row(i + 1)) },
+      { body: Array.from({ length: 5 }, (_, i) => row(i + 1001)) },
+    ]);
+    expect(await db.listContributions()).toHaveLength(1005);
+    expect(seen).toHaveLength(2);
+    expect(seen[0]?.query).toContain('offset=0&limit=1000');
+    expect(seen[1]?.query).toContain('offset=1000&limit=1000');
+  });
+
   it('maps contribution rows', async () => {
     const row = {
       id: 2,

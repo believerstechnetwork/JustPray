@@ -22,6 +22,8 @@ const THEME_KEY = 'jp:theme';
 
 const page = document.getElementById('page') as HTMLElement;
 let renderedPage: Route | null = null;
+/** Bumped by every response that carries a seat count, so an older one never overwrites a newer one. */
+let seatCountVersion = 0;
 
 const routeFromHash = (): Route => {
   const r = location.hash.replace(/^#\/?/, '') as Route;
@@ -76,10 +78,11 @@ function go(route: Route): void {
 
 async function loadPublic(): Promise<void> {
   S.load = 'loading';
+  const version = ++seatCountVersion;
   try {
     const info = await api.publicInfo();
     S.event = info.event;
-    S.reserved = info.reserved;
+    if (version === seatCountVersion) S.reserved = info.reserved;
     S.banks = info.banks;
     // Offer dollars by default only when there is no naira account.
     if (!S.banks.NGN && S.banks.USD) setCurrency('USD');
@@ -236,7 +239,12 @@ document.addEventListener('click', async (e) => {
       return render();
     }
     case 'logout':
-      await api.logout().catch(() => undefined);
+      try {
+        await api.logout();
+      } catch (err) {
+        S.adminError = `Sign out did not complete: ${errorMessage(err)}`;
+        return render();
+      }
       S.admin = null;
       S.adminAuthed = false;
       S.adminError = '';
@@ -262,6 +270,7 @@ async function submitRegister(data: FormData): Promise<void> {
   render();
   try {
     const res = await api.reserve(Object.fromEntries(data) as Record<string, string>);
+    seatCountVersion++;
     S.reserved = res.reserved;
     if (S.event) S.event.capacity = res.capacity;
     if (res.status === 'created') {

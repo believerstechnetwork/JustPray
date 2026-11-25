@@ -9,6 +9,9 @@ export interface EventDetails {
   capacity: number;
 }
 
+export type UpdateEventOutcome =
+  { ok: true; event: EventDetails } | { ok: false; reserved: number };
+
 export interface ReservationRecord {
   id: number;
   seat: number;
@@ -76,7 +79,8 @@ export interface NewContribution {
 /** Storage used by the API. `SupabaseDb` in production, `MemoryDb` in tests and local dev. */
 export interface Db {
   currentEvent(): Promise<EventDetails | null>;
-  updateEvent(event: EventDetails): Promise<EventDetails>;
+  /** Refuses (and changes nothing) when capacity is below the seats already reserved. */
+  updateEvent(event: EventDetails): Promise<UpdateEventOutcome>;
   reservedCount(): Promise<number>;
   reserve(input: NewReservation): Promise<ReserveOutcome>;
   markEmailSent(reservationId: number): Promise<void>;

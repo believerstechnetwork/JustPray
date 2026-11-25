@@ -114,7 +114,7 @@ begin
   values (
     ev.id,
     next_seat,
-    'JP-' || lpad(next_seat::text, 4, '0'),
+    'JP-' || lpad(next_seat::text, greatest(4, length(next_seat::text)), '0'),
     trim(p_name),
     lower(trim(p_email)),
     trim(p_phone),
@@ -128,6 +128,49 @@ $$;
 
 revoke execute on function public.reserve_seat(text, text, text, boolean) from public, anon, authenticated;
 grant execute on function public.reserve_seat(text, text, text, boolean) to service_role;
+
+-- Change the current gathering. Takes the same row lock as reserve_seat, so a booking and a
+-- capacity change can't interleave: capacity can never drop below the seats already taken.
+--   status 'ok'      : saved
+--   status 'too_low' : capacity is below the seats reserved; nothing changed
+create or replace function public.update_current_event(
+  p_title text,
+  p_date date,
+  p_time text,
+  p_venue text,
+  p_capacity integer
+)
+returns table (status text, reserved integer)
+language plpgsql
+set search_path = public
+as $$
+declare
+  ev public.events;
+  taken integer;
+begin
+  select * into ev from public.events e where e.is_current for update;
+  if not found then
+    insert into public.events (title, date, time, venue, capacity)
+    values (p_title, p_date, p_time, p_venue, p_capacity);
+    return query select 'ok'::text, 0;
+    return;
+  end if;
+
+  select count(*) into taken from public.reservations x where x.event_id = ev.id;
+  if p_capacity < taken then
+    return query select 'too_low'::text, taken;
+    return;
+  end if;
+
+  update public.events e
+  set title = p_title, date = p_date, time = p_time, venue = p_venue, capacity = p_capacity
+  where e.id = ev.id;
+  return query select 'ok'::text, taken;
+end;
+$$;
+
+revoke execute on function public.update_current_event(text, date, text, text, integer) from public, anon, authenticated;
+grant execute on function public.update_current_event(text, date, text, text, integer) to service_role;
 
 -- The first gathering. Edit it later from the organiser page (#/admin -> Event).
 insert into public.events (title, date, time, venue, capacity)

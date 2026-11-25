@@ -324,6 +324,15 @@ describe('organiser API', () => {
     ).toBe(400);
   });
 
+  it('refuses a capacity cut when the database finds more bookings than the pre-check', async () => {
+    // A booking lands between the early count and the write: the database's answer wins.
+    db.reservedCount = () => Promise.resolve(0);
+    db.updateEvent = () => Promise.resolve({ ok: false, reserved: 3 });
+    const r = await call('PUT', '/api/admin/event', { ...EVENT, capacity: 2 }, adminCookie());
+    expect(r.status).toBe(400);
+    expect(r.data.error).toBe('Capacity cannot be below the 3 seats already reserved.');
+  });
+
   it('exports reservations as CSV', async () => {
     await call('POST', '/api/reserve', { ...person('a@b.co'), fullName: '=HYPERLINK("x")' });
     const { status, res } = await call(

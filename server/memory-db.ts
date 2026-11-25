@@ -7,6 +7,7 @@ import type {
   NewReservation,
   ReservationRecord,
   ReserveOutcome,
+  UpdateEventOutcome,
 } from './types';
 
 /** In-memory storage with the same rules as `supabase/schema.sql`.
@@ -27,9 +28,11 @@ export class MemoryDb implements Db {
     return this.event ? { ...this.event } : null;
   }
 
-  async updateEvent(event: EventDetails): Promise<EventDetails> {
+  async updateEvent(event: EventDetails): Promise<UpdateEventOutcome> {
+    if (event.capacity < this.reservations.length)
+      return { ok: false, reserved: this.reservations.length };
     this.event = { ...event };
-    return { ...event };
+    return { ok: true, event: { ...event } };
   }
 
   async reservedCount(): Promise<number> {

@@ -123,8 +123,12 @@ function login(): string {
 export function admin(): string {
   if (S.adminAuthed === false) return `<main>${login()}</main>`;
   const d = S.admin;
+  const notice =
+    S.adminError && S.tab !== 'events'
+      ? `<p class="err" role="alert">${esc(S.adminError)}</p>`
+      : '';
   const body = d
-    ? { overview, attendees, contributions, events }[S.tab](d)
+    ? notice + { overview, attendees, contributions, events }[S.tab](d)
     : S.adminError
       ? `<p class="err" role="alert">${esc(S.adminError)}</p><button class="btn small ghost" data-action="admin-reload" type="button">Try again</button>`
       : '<div role="status"><div class="spin"></div><p>Loading…</p></div>';

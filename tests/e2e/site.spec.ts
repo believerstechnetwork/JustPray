@@ -100,8 +100,10 @@ test('a validation error keeps what the visitor typed', async ({ page }) => {
   await page.goto('/#/register');
   await page.getByLabel('Full name *').fill('Ada Obi');
   await page.getByLabel('Email *').fill('ada@example.com');
+  await page.getByLabel('Tell me about future Just Pray gatherings.').check();
   await page.getByRole('button', { name: 'Reserve my seat' }).click();
   await expect(page.getByText('Please agree so we can manage your reservation.')).toBeVisible();
+  await expect(page.getByLabel('Tell me about future Just Pray gatherings.')).toBeChecked();
   await expect(page.getByLabel('Full name *')).toHaveValue('Ada Obi');
   await expect(page.getByLabel('Email *')).toHaveValue('ada@example.com');
 });

@@ -8,10 +8,14 @@ import type {
   NewReservation,
   ReservationRecord,
   ReserveOutcome,
+  UpdateEventOutcome,
 } from './types';
 
 /** Postgres unique-violation error code. */
 const UNIQUE_VIOLATION = '23505';
+
+/** Rows per request. Supabase caps responses (1,000 rows by default), so lists are read in pages. */
+const PAGE = 1000;
 
 type Row = Record<string, unknown>;
 
@@ -81,25 +85,37 @@ export class SupabaseDb implements Db {
     return row ? toEvent(row) : null;
   }
 
-  async updateEvent(event: EventDetails): Promise<EventDetails> {
-    const row = await this.currentEventRow();
-    const values = {
-      title: event.title,
-      date: event.date,
-      time: event.time,
-      venue: event.venue,
-      capacity: event.capacity,
-    };
-    const saved = row
-      ? check(await this.sb.from('events').update(values).eq('id', n(row.id)).select().single())
-      : check(
-          await this.sb
-            .from('events')
-            .insert({ ...values, is_current: true })
-            .select()
-            .single(),
-        );
-    return toEvent(saved as Row);
+  async updateEvent(event: EventDetails): Promise<UpdateEventOutcome> {
+    const rows = check(
+      await this.sb.rpc('update_current_event', {
+        p_title: event.title,
+        p_date: event.date,
+        p_time: event.time,
+        p_venue: event.venue,
+        p_capacity: event.capacity,
+      }),
+    ) as Row[];
+    const r = rows[0];
+    if (!r) throw new Error('Database error: update_current_event returned no row');
+    if (s(r.status) === 'too_low') return { ok: false, reserved: n(r.reserved) };
+    const saved = await this.currentEvent();
+    if (!saved) throw new Error('Database error: the gathering was not saved');
+    return { ok: true, event: saved };
+  }
+
+  /** Read every row a query matches, a page at a time, in a stable order. */
+  private async all(
+    page: (
+      from: number,
+      to: number,
+    ) => PromiseLike<{ data: unknown; error: { message: string } | null }>,
+  ): Promise<Row[]> {
+    const out: Row[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const rows = check(await page(from, from + PAGE - 1)) as Row[];
+      out.push(...rows);
+      if (rows.length < PAGE) return out;
+    }
   }
 
   async reservedCount(): Promise<number> {
@@ -153,13 +169,15 @@ export class SupabaseDb implements Db {
   async listReservations(): Promise<ReservationRecord[]> {
     const row = await this.currentEventRow();
     if (!row) return [];
-    const rows = check(
-      await this.sb
+    const eventId = n(row.id);
+    const rows = await this.all((from, to) =>
+      this.sb
         .from('reservations')
         .select('*')
-        .eq('event_id', n(row.id))
-        .order('seat', { ascending: true }),
-    ) as Row[];
+        .eq('event_id', eventId)
+        .order('seat', { ascending: true })
+        .range(from, to),
+    );
     return rows.map(toReservation);
   }
 
@@ -201,13 +219,14 @@ export class SupabaseDb implements Db {
   }
 
   async listContributions(): Promise<ContributionRecord[]> {
-    const rows = check(
-      await this.sb
+    const rows = await this.all((from, to) =>
+      this.sb
         .from('contributions')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(2000),
-    ) as Row[];
+        .order('id', { ascending: false })
+        .range(from, to),
+    );
     return rows.map(toContribution);
   }
 

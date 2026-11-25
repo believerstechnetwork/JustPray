@@ -336,8 +336,12 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
     if (path === '/api/admin/event' && method === 'PUT') {
       requireAdmin();
       const body = await readJson(req);
+      // Early, friendly check; the database makes the final decision under a lock.
       const event = validEvent(body, await db().reservedCount());
-      return json(200, { event: await db().updateEvent(event) });
+      const saved = await db().updateEvent(event);
+      if (!saved.ok)
+        return fail(400, `Capacity cannot be below the ${saved.reserved} seats already reserved.`);
+      return json(200, { event: saved.event });
     }
 
     const statusMatch = /^\/api\/admin\/contributions\/(\d+)$/.exec(path);
