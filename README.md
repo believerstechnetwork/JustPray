@@ -77,3 +77,14 @@ New pushes to a PR cancel its older runs. To require CI before merging, add a br
 
 Photos are from past BTN conferences. Originals are not stored in the repo; the committed files are
 resized to a 2400px long edge at JPEG quality 88, with event watermarks cropped out.
+
+## Design tooling
+
+UI skills for AI coding agents live in `.claude/skills` (Impeccable plus a few of Emil Kowalski's
+design-engineering skills) and in `.agents/skills` for tools that read that folder. They only guide
+agents and are not part of the site, so lint and format checks skip them.
+
+- Start a design session with `/impeccable init` in Claude Code. It writes `PRODUCT.md` and `DESIGN.md`.
+- Impeccable's edit hooks are personal. They live in `.claude/settings.local.json`, which is
+  git-ignored. Run `npx impeccable skills install` to set them up on your machine.
+- `skills-lock.json` records where the Emil skills came from so they can be updated later.

@@ -159,3 +159,7 @@ vite.config.ts.timestamp-*
 # Playwright
 playwright-report/
 test-results/
+
+# Local design-tool settings (personal, not shared)
+.claude/settings.local.json
+.impeccable/config.local.json
