@@ -3,3 +3,6 @@ coverage
 playwright-report
 test-results
 package-lock.json
+.claude
+.agents
+skills-lock.json
