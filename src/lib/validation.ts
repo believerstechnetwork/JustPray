@@ -1,7 +1,16 @@
 /** Input validation for the public forms. Mirrors the HTML constraints so the
  *  same rules hold when the browser's own validation is bypassed. */
 
-export const MIN_CONTRIBUTION = 100;
+export type Currency = 'NGN' | 'USD';
+export const CURRENCIES: readonly Currency[] = ['NGN', 'USD'];
+export const CURRENCY_SYMBOL: Record<Currency, string> = { NGN: '₦', USD: '$' };
+
+/** Smallest and largest contribution, in whole naira or dollars. */
+export const CONTRIBUTION_LIMITS: Record<Currency, { min: number; max: number }> = {
+  NGN: { min: 100, max: 10_000_000 },
+  USD: { min: 1, max: 50_000 },
+};
+export const MIN_CONTRIBUTION = CONTRIBUTION_LIMITS.NGN.min;
 
 /** Same rule as the phone input's `pattern` attribute. */
 export const PHONE_PATTERN = '[+]?[0-9][0-9 ]{8,18}';
@@ -20,6 +29,26 @@ export type RegistrationField = 'name' | 'email' | 'phone' | 'privacy';
 
 export type Result<T, E> = { ok: true; value: T } | { ok: false; errors: E };
 
+/** Anything with FormData's `get`, so the browser (FormData) and the server
+ *  (parsed JSON, see `fieldsOf`) share one set of rules. */
+export interface Fields {
+  get(name: string): FormDataEntryValue | null;
+}
+
+/** Wrap a parsed JSON body so it reads like FormData. `true` reads as a ticked
+ *  checkbox; `false`, missing and non-string values read as empty. */
+export const fieldsOf = (body: unknown): Fields => {
+  const o = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+  return {
+    get: (name) => {
+      const v = o[name];
+      if (typeof v === 'string') return v;
+      if (typeof v === 'number') return String(v);
+      return v === true ? 'on' : null;
+    },
+  };
+};
+
 const str = (v: FormDataEntryValue | null): string => (typeof v === 'string' ? v.trim() : '');
 
 export const isValidEmail = (email: string): boolean => EMAIL_RE.test(email.trim());
@@ -30,7 +59,7 @@ export const isValidPhone = (phone: string): boolean => PHONE_RE.test(phone.trim
 export const normalisePhone = (phone: string): string => phone.trim().replace(/\s+/g, ' ');
 
 export function validateRegistration(
-  data: FormData,
+  data: Fields,
 ): Result<RegistrationInput, Partial<Record<RegistrationField, string>>> {
   const value: RegistrationInput = {
     name: str(data.get('fullName')).replace(/\s+/g, ' '),
@@ -48,14 +77,36 @@ export function validateRegistration(
   return Object.keys(errors).length ? { ok: false, errors } : { ok: true, value };
 }
 
-export function validateContribution(
-  data: FormData,
-): Result<{ amount: number; email: string }, string> {
+export interface ContributionInput {
+  currency: Currency;
+  amount: number;
+  name: string;
+  email: string;
+}
+
+export function validateContribution(data: Fields): Result<ContributionInput, string> {
+  const rawCurrency = str(data.get('currency')).toUpperCase() || 'NGN';
+  if (!CURRENCIES.includes(rawCurrency as Currency))
+    return { ok: false, errors: 'Choose naira or dollars.' };
+  const currency = rawCurrency as Currency;
+  const { min, max } = CONTRIBUTION_LIMITS[currency];
+  const sym = CURRENCY_SYMBOL[currency];
   const amount = Number(str(data.get('amount')));
-  const email = str(data.get('email'));
-  if (!Number.isFinite(amount) || amount < MIN_CONTRIBUTION)
-    return { ok: false, errors: `Enter at least ₦${MIN_CONTRIBUTION}.` };
-  if (!Number.isInteger(amount)) return { ok: false, errors: 'Enter a whole number of naira.' };
+  const name = str(data.get('name')).replace(/\s+/g, ' ');
+  const email = str(data.get('email')).toLowerCase();
+  if (!Number.isFinite(amount) || amount < min)
+    return { ok: false, errors: `Enter at least ${sym}${min.toLocaleString('en-NG')}.` };
+  if (!Number.isInteger(amount))
+    return {
+      ok: false,
+      errors: `Enter a whole number of ${currency === 'NGN' ? 'naira' : 'dollars'}.`,
+    };
+  if (amount > max)
+    return {
+      ok: false,
+      errors: `For gifts above ${sym}${max.toLocaleString('en-NG')}, please contact the organisers.`,
+    };
+  if (name.length < 2) return { ok: false, errors: 'Enter the name on your bank account.' };
   if (!isValidEmail(email)) return { ok: false, errors: 'Enter a valid email for your receipt.' };
-  return { ok: true, value: { amount, email } };
+  return { ok: true, value: { currency, amount, name, email } };
 }

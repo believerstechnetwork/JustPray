@@ -14,8 +14,10 @@ let shareImg: Blob | null = null;
 
 const $ = <T extends HTMLElement>(sel: string): T | null => document.querySelector<T>(sel);
 
+const nextDate = (): string => (S.event ? `${longDate(S.event.date)}, ${S.event.time}. ` : '');
+
 export const shareText = (): string =>
-  `Join Just Pray: a free monthly prayer gathering for people who work in tech, Lagos. ${longDate(S.event.date)}, ${S.event.time}. Our goal is one protected afternoon each month to read Scripture and pray together. Reserve a seat:`;
+  `Join Just Pray: a free monthly prayer gathering for people who work in tech, Lagos. ${nextDate()}Our goal is one protected afternoon each month to read Scripture and pray together. Reserve a seat:`;
 
 /** Build the links for each share target. Pure so it can be unit tested. */
 export function shareLinks(text: string, url: string): Record<string, string> {
@@ -78,7 +80,7 @@ function makeCard(i: number): Promise<{ blob: Blob | null; dataUrl: string }> {
       x.font = '700 26px Montserrat,Arial,sans-serif';
       x.fillStyle = '#cfe8c9';
       [
-        'Gather. Free, up to 120 seats.',
+        `Gather. Free, up to ${S.event?.capacity ?? 120} seats.`,
         'Pray. Scripture, then personal and group prayer.',
         'Keep going. A prayer rhythm between gatherings.',
       ].forEach((t, k) => x.fillText(t, 60, 420 + k * 40));
@@ -86,7 +88,11 @@ function makeCard(i: number): Promise<{ blob: Blob | null; dataUrl: string }> {
       x.fillRect(60, H - 92, 6, 50);
       x.fillStyle = '#fff';
       x.font = '800 28px Montserrat,Arial,sans-serif';
-      x.fillText(`${longDate(S.event.date)} · ${S.event.time}`, 80, H - 68);
+      x.fillText(
+        S.event ? `${longDate(S.event.date)} · ${S.event.time}` : 'Monthly in Lagos',
+        80,
+        H - 68,
+      );
       x.font = '600 22px Montserrat,Arial,sans-serif';
       x.fillStyle = '#cfe8c9';
       x.fillText('Believers Tech Network', 80, H - 40);

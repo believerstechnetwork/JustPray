@@ -1406,6 +1406,24 @@ td small {
   .side .sub {
     display: none;
   }
+  /* Keep Sign out reachable on phones, as the last tab. */
+  .side .back.out {
+    display: block;
+    width: auto !important;
+    margin: 0;
+    border-top: 0;
+    padding-top: 0;
+  }
+  .side {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+  }
+  .side nav {
+    flex: 1 1 100%;
+    order: 2;
+  }
 }
 @container (max-width:700px) {
   .hero {
@@ -1511,4 +1529,109 @@ td small {
   overflow: hidden;
   clip: rect(0 0 0 0);
   white-space: nowrap;
+}
+
+/* Functional site additions ------------------------------------------------ */
+
+/* Spam trap: hidden from people and screen readers, still in the form for bots. */
+.hp {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.btn[disabled] {
+  opacity: 0.6;
+  cursor: progress;
+}
+.demo .link {
+  color: var(--lime);
+  font-size: inherit;
+}
+.copy {
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 800;
+  padding: 2px 10px;
+  margin-left: 6px;
+  border: 2px solid currentColor;
+  border-radius: 99px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.copy:hover {
+  background: var(--lime);
+  color: var(--deep);
+  border-color: var(--deep);
+}
+.copyval.code {
+  letter-spacing: 0.04em;
+}
+.tag.warn {
+  background: #ffe08a;
+}
+.acts {
+  white-space: nowrap;
+  text-align: right;
+}
+.admin-login {
+  min-height: 70vh;
+  align-items: center;
+}
+.panel-plain {
+  max-width: 420px;
+  width: 100%;
+}
+.amounts.cur {
+  margin-bottom: 10px;
+}
+
+/* Organiser tables become stacked cards on phones. */
+@media (max-width: 640px) {
+  table.cards thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  table.cards,
+  table.cards tbody,
+  table.cards tr,
+  table.cards td {
+    display: block;
+    width: 100%;
+  }
+  table.cards tr {
+    padding: 12px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  table.cards td {
+    border: 0;
+    padding: 3px 0;
+    overflow-wrap: anywhere;
+  }
+  table.cards td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  table.cards td.acts {
+    text-align: left;
+    padding-top: 8px;
+  }
 }
