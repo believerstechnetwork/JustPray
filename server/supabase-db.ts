@@ -233,8 +233,11 @@ export class SupabaseDb implements Db {
         .order('id', { ascending: true })
         .limit(PAGE),
     );
-    // Newest first for the ledger.
-    return rows.reverse().map(toContribution);
+    // Newest first for the ledger: by creation time, then id. (Id order alone can differ from
+    // creation order by a few milliseconds when contributions arrive at the same moment.)
+    return rows
+      .map(toContribution)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id - a.id);
   }
 
   async ping(): Promise<void> {

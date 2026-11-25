@@ -176,6 +176,32 @@ describe('SupabaseDb', () => {
     expect(seen[2]?.query).toContain('id=gt.1005');
   });
 
+  it('orders the ledger by creation time, then id, newest first', async () => {
+    const at = (id: number, created_at: string) => ({
+      id,
+      reference: `JP-${id}`,
+      name: 'A',
+      email: 'a@b.co',
+      currency: 'NGN',
+      amount: 100,
+      status: 'pending',
+      created_at,
+    });
+    const { db } = fakeSupabase([
+      // Id 2 was allocated first but committed later than id 3.
+      {
+        body: [
+          at(1, '2027-01-01T10:00:00.000Z'),
+          at(2, '2027-01-01T10:00:00.900Z'),
+          at(3, '2027-01-01T10:00:00.500Z'),
+          at(4, '2027-01-01T10:00:00.500Z'),
+        ],
+      },
+      { body: [] },
+    ]);
+    expect((await db.listContributions()).map((c) => c.id)).toEqual([2, 4, 3, 1]);
+  });
+
   it('keeps reading when the server caps pages below 1,000 rows', async () => {
     const row = (id: number) => ({
       id,

@@ -1,5 +1,6 @@
 import './styles.css';
 import { api, ApiError } from './api';
+import { latestGuard } from './lib/latest';
 import { validateContribution, validateRegistration } from './lib/validation';
 import { handleShareClick, initShareKeys } from './share';
 import type { Currency } from './data/types';
@@ -22,8 +23,8 @@ const THEME_KEY = 'jp:theme';
 
 const page = document.getElementById('page') as HTMLElement;
 let renderedPage: Route | null = null;
-/** Bumped by every response that carries a seat count, so an older one never overwrites a newer one. */
-let seatCountVersion = 0;
+/** The seat count arrives from page loads and from bookings; an older answer must not replace a newer one. */
+const seatCount = latestGuard();
 
 const routeFromHash = (): Route => {
   const r = location.hash.replace(/^#\/?/, '') as Route;
@@ -78,11 +79,11 @@ function go(route: Route): void {
 
 async function loadPublic(): Promise<void> {
   S.load = 'loading';
-  const version = ++seatCountVersion;
+  const ticket = seatCount.ticket();
   try {
     const info = await api.publicInfo();
     S.event = info.event;
-    if (version === seatCountVersion) S.reserved = info.reserved;
+    seatCount.applyRead(ticket, () => (S.reserved = info.reserved));
     S.banks = info.banks;
     // Offer dollars by default only when there is no naira account.
     if (!S.banks.NGN && S.banks.USD) setCurrency('USD');
@@ -95,12 +96,13 @@ async function loadPublic(): Promise<void> {
 
 async function loadAdmin(): Promise<void> {
   S.adminError = '';
-  const version = ++seatCountVersion;
+  const ticket = seatCount.ticket();
   try {
     S.admin = await api.adminData();
     S.adminAuthed = true;
     if (S.admin.event) S.event = S.admin.event;
-    if (version === seatCountVersion) S.reserved = S.admin.reserved;
+    const reservedNow = S.admin.reserved;
+    seatCount.applyRead(ticket, () => (S.reserved = reservedNow));
   } catch (e) {
     if (e instanceof ApiError && e.status === 401) S.adminAuthed = false;
     else S.adminError = errorMessage(e);
@@ -271,8 +273,7 @@ async function submitRegister(data: FormData): Promise<void> {
   render();
   try {
     const res = await api.reserve(Object.fromEntries(data) as Record<string, string>);
-    seatCountVersion++;
-    S.reserved = res.reserved;
+    seatCount.applyLatest(() => (S.reserved = res.reserved));
     if (S.event) S.event.capacity = res.capacity;
     if (res.status === 'created') {
       S.attendee = res.reservation;
