@@ -7,6 +7,22 @@ import { footer, nav, ovHeadSide, photoBg } from './common';
 const copyRow = (label: string, value: string, extra = ''): string =>
   `<div><dt>${label}</dt><dd><span class="copyval${extra}">${esc(value)}</span> <button class="copy" type="button" data-copy="${esc(value)}" aria-label="Copy ${label.toLowerCase()}">Copy</button></dd></div>`;
 
+/** Every account that is set up, side by side, so givers can see both at a glance. */
+function accounts(): string {
+  const list = (['NGN', 'USD'] as const).flatMap((c) => {
+    const b = S.banks[c];
+    if (!b) return [];
+    const title = c === 'NGN' ? 'Naira account (₦)' : 'Dollar account ($)';
+    return [
+      `<div class="acct"><h3>${title}</h3><dl class="kv">${copyRow('Bank', b.bankName)}${copyRow('Account number', b.accountNumber, ' code')}${copyRow('Account name', b.accountName)}${b.swiftCode ? copyRow('SWIFT code', b.swiftCode, ' code') : ''}</dl></div>`,
+    ];
+  });
+  if (!list.length) return '';
+  // Its own section (not the intro column, which phones hide) so every visitor sees it.
+  return `<section class="acct-sec" aria-labelledby="acct-h"><h2 id="acct-h">Our accounts</h2><div class="accts">${list.join('')}</div>
+  <p class="fine">Fill in the form above to get your own reference, then put it in the transfer description so we can match and confirm your gift.</p></section>`;
+}
+
 function panel(): string {
   const h = '<h3>Make a contribution</h3>';
   const err = S.supportError ? `<p class="err" role="alert">${esc(S.supportError)}</p>` : '';
@@ -47,5 +63,5 @@ export function support(): string {
   return `${nav()}
 <section class="head green photo-bg" ${photoBg('head2', '50% 22%', ovHeadSide)}><h1>Help cover the cost of the room.</h1><p class="lede">Every gathering is free. Giving is optional and does not affect your seat. Contributions go to venue, equipment and hospitality.</p></section>
 <section class="split"><div class="intro"><h2>How it works</h2>
-<ol class="steps"><li><b>1</b><div><strong>Pick an amount</strong><span>${S.banks.USD && S.banks.NGN ? `Give what you want to, in naira or dollars. The minimum is ₦${CONTRIBUTION_LIMITS.NGN.min} or $${CONTRIBUTION_LIMITS.USD.min}.` : `Give what you want to. The minimum is ${S.banks.USD ? `$${CONTRIBUTION_LIMITS.USD.min}` : `₦${CONTRIBUTION_LIMITS.NGN.min}`}.`}</span></div></li><li><b>2</b><div><strong>Send a bank transfer</strong><span>Use the reference we give you as the transfer description.</span></div></li><li><b>3</b><div><strong>We confirm it</strong><span>An organiser checks it against our bank statement.</span></div></li></ol></div>${torn(41, 'panel', panel())}</section>${footer()}`;
+<ol class="steps"><li><b>1</b><div><strong>Pick an amount</strong><span>${S.banks.USD && S.banks.NGN ? `Give what you want to, in naira or dollars. The minimum is ₦${CONTRIBUTION_LIMITS.NGN.min} or $${CONTRIBUTION_LIMITS.USD.min}.` : `Give what you want to. The minimum is ${S.banks.USD ? `$${CONTRIBUTION_LIMITS.USD.min}` : `₦${CONTRIBUTION_LIMITS.NGN.min}`}.`}</span></div></li><li><b>2</b><div><strong>Send a bank transfer</strong><span>Use the reference we give you as the transfer description.</span></div></li><li><b>3</b><div><strong>We confirm it</strong><span>An organiser checks it against our bank statement.</span></div></li></ol></div>${torn(41, 'panel', panel())}</section>${accounts()}${footer()}`;
 }

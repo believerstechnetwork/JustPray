@@ -95,11 +95,12 @@ async function loadPublic(): Promise<void> {
 
 async function loadAdmin(): Promise<void> {
   S.adminError = '';
+  const version = ++seatCountVersion;
   try {
     S.admin = await api.adminData();
     S.adminAuthed = true;
     if (S.admin.event) S.event = S.admin.event;
-    S.reserved = S.admin.reserved;
+    if (version === seatCountVersion) S.reserved = S.admin.reserved;
   } catch (e) {
     if (e instanceof ApiError && e.status === 401) S.adminAuthed = false;
     else S.adminError = errorMessage(e);

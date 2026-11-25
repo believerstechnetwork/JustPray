@@ -116,8 +116,9 @@ export class SupabaseDb implements Db {
     let after = 0;
     for (;;) {
       const rows = check(await page(after)) as Row[];
+      // Stop only on an empty page: the server may cap pages below PAGE.
+      if (rows.length === 0) return out;
       out.push(...rows);
-      if (rows.length < PAGE) return out;
       after = n(rows[rows.length - 1]?.[key]);
     }
   }

@@ -160,6 +160,7 @@ describe('SupabaseDb', () => {
     const { db, seen } = fakeSupabase([
       { body: Array.from({ length: 1000 }, (_, i) => row(i + 1)) },
       { body: Array.from({ length: 5 }, (_, i) => row(i + 1001)) },
+      { body: [] },
     ]);
     const list = await db.listContributions();
     expect(list).toHaveLength(1005);
@@ -167,11 +168,27 @@ describe('SupabaseDb', () => {
     expect(list[0]?.id).toBe(1005);
     expect(new Set(list.map((c) => c.id)).size).toBe(1005);
     // Keyset pages: each page starts after the last id of the previous one.
-    expect(seen).toHaveLength(2);
+    expect(seen).toHaveLength(3);
     expect(seen[0]?.query).toContain('id=gt.0');
     expect(seen[1]?.query).toContain('id=gt.1000');
     expect(seen[1]?.query).toContain('limit=1000');
     expect(seen[1]?.query).not.toContain('offset');
+    expect(seen[2]?.query).toContain('id=gt.1005');
+  });
+
+  it('keeps reading when the server caps pages below 1,000 rows', async () => {
+    const row = (id: number) => ({
+      id,
+      reference: `JP-${id}`,
+      name: 'A',
+      email: 'a@b.co',
+      currency: 'NGN',
+      amount: 100,
+      status: 'pending',
+      created_at: '2027-01-01T00:00:00Z',
+    });
+    const { db } = fakeSupabase([{ body: [row(1), row(2)] }, { body: [row(3)] }, { body: [] }]);
+    expect((await db.listContributions()).map((c) => c.id)).toEqual([3, 2, 1]);
   });
 
   it('maps contribution rows', async () => {

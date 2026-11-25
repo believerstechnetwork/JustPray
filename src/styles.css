@@ -1595,6 +1595,22 @@ td small {
 .amounts.cur {
   margin-bottom: 10px;
 }
+.acct-sec {
+  padding: 0 var(--gutter) clamp(32px, 5cqi, 72px);
+}
+.accts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 18px var(--gap);
+  margin-top: 16px;
+}
+.acct h3 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+.acct .kv {
+  margin-top: 0;
+}
 
 /* Organiser tables become stacked cards on phones. */
 @media (max-width: 640px) {

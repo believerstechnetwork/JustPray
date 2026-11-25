@@ -131,8 +131,8 @@ test('support flow: amount validation, bank details with a reference, then thank
   await page.getByLabel('Amount (₦)').fill('2500');
   await page.getByRole('button', { name: 'Show bank details' }).click();
   await expect(page.getByText('Transfer ₦2,500 to our naira account below.')).toBeVisible();
-  await expect(page.getByText('0000000000')).toBeVisible();
-  const reference = (await page.locator('.copyval.code').last().textContent()) ?? '';
+  await expect(page.locator('.panel').getByText('0000000000')).toBeVisible();
+  const reference = (await page.locator('.panel .copyval.code').last().textContent()) ?? '';
   expect(reference).toMatch(/^JP-[A-Z0-9]{5}$/);
   await page.getByRole('button', { name: "I've sent it" }).click();
   await expect(page.getByRole('heading', { name: 'Thank you, Ada.' })).toBeVisible();
@@ -167,6 +167,15 @@ const signIn = async (page: Page) => {
   await expect(page.getByRole('heading', { level: 1, name: 'Overview' })).toBeVisible();
 };
 
+test('the support page lists both accounts', async ({ page }) => {
+  await page.goto('/#/support');
+  const accounts = page.locator('.accts');
+  await expect(accounts.getByRole('heading', { name: 'Naira account (₦)' })).toBeVisible();
+  await expect(accounts.getByRole('heading', { name: 'Dollar account ($)' })).toBeVisible();
+  await expect(accounts.getByText('0000000000')).toBeVisible();
+  await expect(accounts.getByText('1111111111')).toBeVisible();
+});
+
 test('dollar contributions show the dollar account', async ({ page }) => {
   await page.goto('/#/support');
   await page.getByRole('button', { name: '$ Dollars' }).click();
@@ -175,8 +184,8 @@ test('dollar contributions show the dollar account', async ({ page }) => {
   await page.getByLabel('Email').fill('giver@example.com');
   await page.getByRole('button', { name: 'Show bank details' }).click();
   await expect(page.getByText('Transfer $25 to our dollar account below.')).toBeVisible();
-  await expect(page.getByText('1111111111')).toBeVisible();
-  await expect(page.getByText('SAMPNGLA')).toBeVisible();
+  await expect(page.locator('.panel').getByText('1111111111')).toBeVisible();
+  await expect(page.locator('.panel').getByText('SAMPNGLA')).toBeVisible();
 });
 
 test('organiser area needs the password', async ({ page }) => {
@@ -193,7 +202,7 @@ test('organiser confirms a contribution and the total updates', async ({ page })
   await page.getByLabel('Name on your bank account').fill('Confirm Me');
   await page.getByLabel('Email').fill(uniqueEmail());
   await page.getByRole('button', { name: 'Show bank details' }).click();
-  const reference = (await page.locator('.copyval.code').last().textContent()) ?? '';
+  const reference = (await page.locator('.panel .copyval.code').last().textContent()) ?? '';
   await page.getByRole('button', { name: "I've sent it" }).click();
   await expect(page.getByText('Thank you')).toBeVisible();
 
