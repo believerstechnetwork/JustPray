@@ -14,7 +14,11 @@ import type {
 /** Postgres unique-violation error code. */
 const UNIQUE_VIOLATION = '23505';
 
-/** Rows per request. Supabase caps responses (1,000 rows by default), so lists are read in pages. */
+/** Rows per request. Supabase caps responses (1,000 rows by default), so lists are read in pages.
+ *  Pages are keyed on a column that only grows (id, seat) rather than on offsets, so a row
+ *  inserted mid-read can never push another row onto the next page and be counted twice.
+ *  A row committed mid-read with a lower id than the cursor can be missed; it shows up on the
+ *  next read, and nothing is written back from these lists. */
 const PAGE = 1000;
 
 type Row = Record<string, unknown>;
@@ -103,18 +107,18 @@ export class SupabaseDb implements Db {
     return { ok: true, event: saved };
   }
 
-  /** Read every row a query matches, a page at a time, in a stable order. */
+  /** Read every row, a page at a time, ascending by `key` (a column that only grows). */
   private async all(
-    page: (
-      from: number,
-      to: number,
-    ) => PromiseLike<{ data: unknown; error: { message: string } | null }>,
+    key: string,
+    page: (after: number) => PromiseLike<{ data: unknown; error: { message: string } | null }>,
   ): Promise<Row[]> {
     const out: Row[] = [];
-    for (let from = 0; ; from += PAGE) {
-      const rows = check(await page(from, from + PAGE - 1)) as Row[];
+    let after = 0;
+    for (;;) {
+      const rows = check(await page(after)) as Row[];
       out.push(...rows);
       if (rows.length < PAGE) return out;
+      after = n(rows[rows.length - 1]?.[key]);
     }
   }
 
@@ -170,13 +174,14 @@ export class SupabaseDb implements Db {
     const row = await this.currentEventRow();
     if (!row) return [];
     const eventId = n(row.id);
-    const rows = await this.all((from, to) =>
+    const rows = await this.all('seat', (after) =>
       this.sb
         .from('reservations')
         .select('*')
         .eq('event_id', eventId)
+        .gt('seat', after)
         .order('seat', { ascending: true })
-        .range(from, to),
+        .limit(PAGE),
     );
     return rows.map(toReservation);
   }
@@ -219,15 +224,16 @@ export class SupabaseDb implements Db {
   }
 
   async listContributions(): Promise<ContributionRecord[]> {
-    const rows = await this.all((from, to) =>
+    const rows = await this.all('id', (after) =>
       this.sb
         .from('contributions')
         .select('*')
-        .order('created_at', { ascending: false })
-        .order('id', { ascending: false })
-        .range(from, to),
+        .gt('id', after)
+        .order('id', { ascending: true })
+        .limit(PAGE),
     );
-    return rows.map(toContribution);
+    // Newest first for the ledger.
+    return rows.reverse().map(toContribution);
   }
 
   async ping(): Promise<void> {

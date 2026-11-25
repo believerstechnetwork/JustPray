@@ -161,10 +161,17 @@ describe('SupabaseDb', () => {
       { body: Array.from({ length: 1000 }, (_, i) => row(i + 1)) },
       { body: Array.from({ length: 5 }, (_, i) => row(i + 1001)) },
     ]);
-    expect(await db.listContributions()).toHaveLength(1005);
+    const list = await db.listContributions();
+    expect(list).toHaveLength(1005);
+    // Newest first, no repeats.
+    expect(list[0]?.id).toBe(1005);
+    expect(new Set(list.map((c) => c.id)).size).toBe(1005);
+    // Keyset pages: each page starts after the last id of the previous one.
     expect(seen).toHaveLength(2);
-    expect(seen[0]?.query).toContain('offset=0&limit=1000');
-    expect(seen[1]?.query).toContain('offset=1000&limit=1000');
+    expect(seen[0]?.query).toContain('id=gt.0');
+    expect(seen[1]?.query).toContain('id=gt.1000');
+    expect(seen[1]?.query).toContain('limit=1000');
+    expect(seen[1]?.query).not.toContain('offset');
   });
 
   it('maps contribution rows', async () => {

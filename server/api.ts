@@ -406,6 +406,14 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
 
 /** Build dependencies from environment variables (Netlify). */
 export interface ApiEnv {
+  BANK_NAME_NAIRA?: string;
+  BANK_ACCOUNT_NAME_NAIRA?: string;
+  BANK_ACCOUNT_NUMBER_NAIRA?: string;
+  BANK_NAME_DOLLAR?: string;
+  BANK_ACCOUNT_NAME_DOLLAR?: string;
+  BANK_ACCOUNT_NUMBER_DOLLAR?: string;
+  BANK_SWIFT_CODE_DOLLAR?: string;
+  // Earlier names, still accepted.
   BANK_NAME?: string;
   BANK_ACCOUNT_NAME?: string;
   BANK_ACCOUNT_NUMBER?: string;
@@ -430,8 +438,17 @@ const account = (
       }
     : null;
 
-/** Naira account from BANK_*, dollar account from USD_*. */
+/** Naira account from BANK_*_NAIRA, dollar account from BANK_*_DOLLAR (earlier names also work). */
 export const banksFromEnv = (env: ApiEnv): Banks => ({
-  NGN: account(env.BANK_NAME, env.BANK_ACCOUNT_NAME, env.BANK_ACCOUNT_NUMBER),
-  USD: account(env.USD_BANK_NAME, env.USD_ACCOUNT_NAME, env.USD_ACCOUNT_NUMBER, env.USD_SWIFT_CODE),
+  NGN: account(
+    env.BANK_NAME_NAIRA || env.BANK_NAME,
+    env.BANK_ACCOUNT_NAME_NAIRA || env.BANK_ACCOUNT_NAME,
+    env.BANK_ACCOUNT_NUMBER_NAIRA || env.BANK_ACCOUNT_NUMBER,
+  ),
+  USD: account(
+    env.BANK_NAME_DOLLAR || env.USD_BANK_NAME,
+    env.BANK_ACCOUNT_NAME_DOLLAR || env.USD_ACCOUNT_NAME,
+    env.BANK_ACCOUNT_NUMBER_DOLLAR || env.USD_ACCOUNT_NUMBER,
+    env.BANK_SWIFT_CODE_DOLLAR || env.USD_SWIFT_CODE,
+  ),
 });

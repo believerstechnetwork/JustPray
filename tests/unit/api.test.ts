@@ -349,6 +349,30 @@ describe('organiser API', () => {
   });
 });
 
+describe('bank settings', () => {
+  it('reads the _NAIRA / _DOLLAR names, and the earlier names too', async () => {
+    const { banksFromEnv } = await import('../../server/api');
+    expect(
+      banksFromEnv({
+        BANK_NAME_NAIRA: ' GTBank ',
+        BANK_ACCOUNT_NAME_NAIRA: 'Just Pray',
+        BANK_ACCOUNT_NUMBER_NAIRA: '0123456789',
+        BANK_NAME_DOLLAR: 'GTBank USD',
+        BANK_ACCOUNT_NAME_DOLLAR: 'Just Pray',
+        BANK_ACCOUNT_NUMBER_DOLLAR: '9876543210',
+      }),
+    ).toEqual({
+      NGN: { bankName: 'GTBank', accountName: 'Just Pray', accountNumber: '0123456789' },
+      USD: { bankName: 'GTBank USD', accountName: 'Just Pray', accountNumber: '9876543210' },
+    });
+    expect(
+      banksFromEnv({ BANK_NAME: 'A', BANK_ACCOUNT_NAME: 'B', BANK_ACCOUNT_NUMBER: '1' }).NGN,
+    ).toEqual({ bankName: 'A', accountName: 'B', accountNumber: '1' });
+    // An account with a missing field is treated as not set up.
+    expect(banksFromEnv({ BANK_NAME_DOLLAR: 'A', BANK_ACCOUNT_NUMBER_DOLLAR: '1' }).USD).toBeNull();
+  });
+});
+
 describe('helpers', () => {
   it('signs sessions that expire and break when the password changes', () => {
     const t = createSession('pw', 1000);
