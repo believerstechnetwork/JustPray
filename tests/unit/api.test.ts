@@ -333,6 +333,16 @@ describe('organiser API', () => {
     expect(r.data.error).toBe('Capacity cannot be below the 3 seats already reserved.');
   });
 
+  it('starts with no gathering, then the organiser creates it from the Event form', async () => {
+    deps.db = db = new MemoryDb(null);
+    expect((await call('GET', '/api/public')).data.event).toBeNull();
+    expect((await call('POST', '/api/reserve', person('a@b.co'))).status).toBe(503);
+    const created = await call('PUT', '/api/admin/event', EVENT, adminCookie());
+    expect(created.status).toBe(200);
+    expect((await call('GET', '/api/public')).data.event).toEqual(EVENT);
+    expect((await call('POST', '/api/reserve', person('a@b.co'))).status).toBe(201);
+  });
+
   it('exports reservations as CSV', async () => {
     await call('POST', '/api/reserve', { ...person('a@b.co'), fullName: '=HYPERLINK("x")' });
     const { status, res } = await call(

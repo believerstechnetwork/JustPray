@@ -10,7 +10,7 @@ create table if not exists public.events (
   date date not null,
   time text not null,
   venue text not null,
-  capacity integer not null default 120 check (capacity between 1 and 10000),
+  capacity integer not null check (capacity between 1 and 10000),
   is_current boolean not null default true,
   created_at timestamptz not null default now()
 );
@@ -172,7 +172,5 @@ $$;
 revoke execute on function public.update_current_event(text, date, text, text, integer) from public, anon, authenticated;
 grant execute on function public.update_current_event(text, date, text, text, integer) to service_role;
 
--- The first gathering. Edit it later from the organiser page (#/admin -> Event).
-insert into public.events (title, date, time, venue, capacity)
-select 'Just Pray · A Gathering of Hearts', date '2027-01-30', '4:00 PM WAT', 'Venue to be announced, Lagos', 120
-where not exists (select 1 from public.events);
+-- No gathering is created here. Set the title, date, time, venue and seats from the
+-- organiser page (#/admin -> Event); saving there creates the gathering if none exists.
