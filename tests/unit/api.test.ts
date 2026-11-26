@@ -560,6 +560,9 @@ describe('cancelling a seat', () => {
     expect(list.map((r) => r.status)).toEqual(['cancelled', 'active']);
     expect(list[0]?.cancelledAt).not.toBeNull();
     expect(JSON.stringify(data)).not.toContain('cancelHash');
+    // The reservations chart agrees with the seat total: cancelled seats are not counted.
+    const byDay = data.byDay as { count: number }[];
+    expect(byDay.reduce((t, d) => t + d.count, 0)).toBe(1);
   });
 
   it('lets capacity drop to the seats still held', async () => {

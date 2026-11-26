@@ -457,13 +457,15 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
         db().listReservations(),
         db().listContributions(),
       ]);
+      // Seats still held. The chart counts them too, so it agrees with the seat total.
+      const held = reservations.filter((r) => r.status === 'active');
       return json(200, {
         event,
-        reserved: reservations.filter((r) => r.status === 'active').length,
+        reserved: held.length,
         reservations: reservations.map(publicReservation),
         contributions,
         totals: contributionTotals(contributions),
-        byDay: reservationsByDay(reservations, new Date()),
+        byDay: reservationsByDay(held, new Date()),
         email: deps.mailer ? deps.mailer.kind : null,
         banks: deps.banks,
       });
