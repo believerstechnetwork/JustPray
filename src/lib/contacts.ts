@@ -152,6 +152,31 @@ export function parseCsv(text: string): string[][] {
 }
 
 /** Read a chosen file: .xlsx with read-excel-file (loaded on demand), .csv as text. */
+/** The most people one import takes, as the server enforces per request. */
+export const MAX_IMPORT_PEOPLE = 5000;
+/** Largest request body to send at once, well inside the server's limit. */
+export const IMPORT_BATCH_CHARS = 1_000_000;
+
+/** Split a list into batches whose JSON stays under `maxChars`, so names full of characters that
+ *  need escaping (quotes, control characters) never make a request too large. Order is kept. */
+export function importBatches(people: Contact[], maxChars = IMPORT_BATCH_CHARS): Contact[][] {
+  const batches: Contact[][] = [];
+  let batch: Contact[] = [];
+  let size = 0;
+  for (const p of people) {
+    const n = JSON.stringify(p).length + 1;
+    if (batch.length && size + n > maxChars) {
+      batches.push(batch);
+      batch = [];
+      size = 0;
+    }
+    batch.push(p);
+    size += n;
+  }
+  if (batch.length) batches.push(batch);
+  return batches;
+}
+
 export async function readContactsFile(file: File): Promise<ParsedList> {
   if (/\.csv$/i.test(file.name) || file.type === 'text/csv')
     return rowsToContacts(parseCsv(await file.text()));

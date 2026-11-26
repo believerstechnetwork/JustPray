@@ -1,11 +1,26 @@
 -- Just Pray database. Run once in Supabase: SQL Editor -> New query -> paste -> Run.
 -- Safe to run again: it only creates what is missing.
--- Run it when no announcement is sending (none shows "Sending" in the admin list). It alters the
--- tables the sender works on, so the two can deadlock: PostgreSQL then stops one. If it stops this
--- script, run it again; if it stops a send, that email is closed as failed (never sent twice).
+-- Best run when no announcement is sending (none shows "Sending" in the admin list) and nobody is
+-- publishing. To keep it safe even while the sender runs, the script first takes both announcement
+-- tables at once (below), in the order a send uses them, so a send simply waits for the update to
+-- finish. If PostgreSQL still stops this script with a deadlock, run it again; a send it stops is
+-- closed as failed (never sent twice).
 --
 -- Only the server (Netlify Functions, using the secret key) can read or write these tables.
 -- Row Level Security is on and there are no policies, so the public API keys get nothing.
+
+-- On a database that already has the announcement tables, lock both before changing anything, in
+-- the order send rows and then announcements, the same order a send takes them in. A send that
+-- comes along meanwhile then waits at its first step instead of holding one table while this
+-- script waits for it. (A fresh install has nothing to lock.)
+do $$
+begin
+  if to_regclass('public.announcement_sends') is not null
+     and to_regclass('public.announcements') is not null then
+    lock table public.announcement_sends, public.announcements in access exclusive mode;
+  end if;
+end;
+$$;
 
 create table if not exists public.events (
   id bigint generated always as identity primary key,

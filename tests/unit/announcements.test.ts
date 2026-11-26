@@ -5,7 +5,7 @@ import { createSession } from '../../server/auth';
 import { GmailMailer, MemoryMailer, ResendMailer } from '../../server/mailer';
 import { MemoryDb } from '../../server/memory-db';
 import { processOutbox } from '../../server/outbox';
-import { parseCsv, rowsToContacts } from '../../src/lib/contacts';
+import { importBatches, parseCsv, rowsToContacts } from '../../src/lib/contacts';
 import { dateBlock, upcomingCard } from '../../src/views/announcements';
 
 const EVENT = {
@@ -253,6 +253,30 @@ describe('importing people', () => {
     });
     expect(status).toBe(200);
     expect(data).toMatchObject({ added: 5000 });
+  });
+
+  it('splits a list of names full of escaped characters into batches the server accepts', async () => {
+    // 5,000 people whose names are all quote marks: each doubles in JSON, so one request would be
+    // too large. Batches keep every request small, and together they add everyone once.
+    const people = Array.from({ length: 5000 }, (_, i) => ({
+      name: '"'.repeat(120),
+      email: `${String(i).padStart(5, '0')}${'x'.repeat(230)}@example.com`,
+    }));
+    const batches = importBatches(people);
+    expect(batches.length).toBeGreaterThan(1);
+    expect(batches.flat()).toEqual(people);
+    let added = 0;
+    for (const batch of batches) {
+      const body = JSON.stringify({ label: 'Quotes', people: batch });
+      expect(body.length).toBeLessThan(1_100_000);
+      const { status, data } = await call('POST', '/api/admin/contacts/import', {
+        label: 'Quotes',
+        people: batch,
+      });
+      expect(status).toBe(200);
+      added += data.added as number;
+    }
+    expect(added).toBe(5000);
   });
 
   it('needs a signed-in organiser and refuses an empty list', async () => {

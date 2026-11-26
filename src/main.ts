@@ -16,7 +16,7 @@ import {
 } from './state';
 import { previewInner } from './views/announcements';
 import { unsubscribe } from './views/unsubscribe';
-import { readContactsFile } from './lib/contacts';
+import { MAX_IMPORT_PEOPLE, importBatches, readContactsFile } from './lib/contacts';
 import { admin } from './views/admin';
 import { cancel } from './views/cancel';
 import { confirmed } from './views/confirmed';
@@ -272,11 +272,25 @@ async function submitImport(data: FormData): Promise<void> {
   const im = S.ann.importing;
   if (!im || S.busy) return;
   im.label = String(data.get('label') ?? '').trim();
+  if (im.contacts.length > MAX_IMPORT_PEOPLE) {
+    S.ann.error = `Import up to ${MAX_IMPORT_PEOPLE.toLocaleString('en-GB')} people at a time. Split the sheet and import each part.`;
+    return render();
+  }
   S.busy = true;
   S.ann.error = '';
   render();
   try {
-    im.result = await api.importContacts(im.contacts, im.label || im.file);
+    // Sent in batches small enough for any request, however long or unusual the names are; the
+    // counts add up to one result.
+    const total = { added: 0, existing: 0, unsubscribed: 0, invalid: 0 };
+    for (const batch of importBatches(im.contacts)) {
+      const r = await api.importContacts(batch, im.label || im.file);
+      total.added += r.added;
+      total.existing += r.existing;
+      total.unsubscribed += r.unsubscribed;
+      total.invalid += r.invalid;
+    }
+    im.result = total;
     void loadAnnouncements();
   } catch (e) {
     S.ann.error = errorMessage(e);
