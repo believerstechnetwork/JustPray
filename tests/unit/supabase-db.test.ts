@@ -202,6 +202,31 @@ describe('SupabaseDb', () => {
     expect((await db.listContributions()).map((c) => c.id)).toEqual([2, 4, 3, 1]);
   });
 
+  it('orders by time even when fractional seconds have different lengths', async () => {
+    const at = (id: number, created_at: string) => ({
+      id,
+      reference: `JP-${id}`,
+      name: 'A',
+      email: 'a@b.co',
+      currency: 'NGN',
+      amount: 100,
+      status: 'pending',
+      created_at,
+    });
+    const { db } = fakeSupabase([
+      // As PostgREST returns them: trailing zeros dropped. As strings, ".45" sorts after ".5".
+      {
+        body: [
+          at(1, '2027-01-01T10:00:00.5+00:00'),
+          at(2, '2027-01-01T10:00:00.45+00:00'),
+          at(3, '2027-01-01T10:00:01+00:00'),
+        ],
+      },
+      { body: [] },
+    ]);
+    expect((await db.listContributions()).map((c) => c.id)).toEqual([3, 1, 2]);
+  });
+
   it('keeps reading when the server caps pages below 1,000 rows', async () => {
     const row = (id: number) => ({
       id,

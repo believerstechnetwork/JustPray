@@ -235,9 +235,12 @@ export class SupabaseDb implements Db {
     );
     // Newest first for the ledger: by creation time, then id. (Id order alone can differ from
     // creation order by a few milliseconds when contributions arrive at the same moment.)
+    // Compare parsed times, not strings: PostgREST drops trailing zeros from fractional
+    // seconds ("…:00.5+00:00" vs "…:00.45+00:00"), so string order can be wrong.
+    const time = (iso: string): number => Date.parse(iso) || 0;
     return rows
       .map(toContribution)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id - a.id);
+      .sort((a, b) => time(b.createdAt) - time(a.createdAt) || b.id - a.id);
   }
 
   async ping(): Promise<void> {
