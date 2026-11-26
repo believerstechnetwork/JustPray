@@ -106,21 +106,22 @@ export function parseCsv(text: string): string[][] {
   // Drop the byte-order mark some spreadsheet apps put at the start of a CSV.
   const src = text.replace(/^\uFEFF/, '');
   // Semicolons separate cells in some regions' spreadsheet exports. Count each in the first
-  // record that has anything in it (blank lines first are skipped), outside quotes, so a quoted
-  // "Obi, Ada" does not decide it.
+  // record with real text in it, outside quotes, so a quoted "Obi, Ada" does not decide it. Records
+  // with no text (a blank line, or only empty quoted cells like "") are skipped.
   let commas = 0;
   let semis = 0;
-  let started = false;
+  let hasText = false;
   for (let i = 0, q = false; i < src.length; i++) {
-    const ch = src[i];
+    const ch = src[i] ?? '';
     if (!q && (ch === '\n' || ch === '\r')) {
-      if (started) break;
+      if (hasText) break;
+      commas = semis = 0;
       continue;
     }
-    if (!/\s/.test(ch ?? '')) started = true;
     if (ch === '"') q = !q;
     else if (!q && ch === ',') commas++;
     else if (!q && ch === ';') semis++;
+    else if (!/\s/.test(ch)) hasText = true;
   }
   const sep = semis > commas ? ';' : ',';
   for (let i = 0; i < src.length; i++) {

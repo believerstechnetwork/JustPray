@@ -164,6 +164,15 @@ describe('reading a spreadsheet', () => {
     ]);
   });
 
+  it('skips a first record that is only empty quoted cells when picking the separator', () => {
+    const rows = parseCsv('""\r\nName;Email\r\nAda;ada@example.com').filter((r) => r.join(''));
+    expect(rows).toEqual([
+      ['Name', 'Email'],
+      ['Ada', 'ada@example.com'],
+    ]);
+    expect(rowsToContacts(rows).contacts).toEqual([{ name: 'Ada', email: 'ada@example.com' }]);
+  });
+
   it('treats a first row with an address as data, even if a cell mentions email', () => {
     expect(
       rowsToContacts([
