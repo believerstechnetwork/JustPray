@@ -25,6 +25,10 @@ const page = document.getElementById('page') as HTMLElement;
 let renderedPage: Route | null = null;
 /** The seat count arrives from page loads and from bookings; an older answer must not replace a newer one. */
 const seatCount = latestGuard();
+/** Bumped when the organiser saves the event, so a read that started earlier cannot undo the save. */
+let eventVersion = 0;
+/** Bumped on sign-out, so an organiser read that started before it cannot bring the data back. */
+let adminGeneration = 0;
 
 const routeFromHash = (): Route => {
   const r = location.hash.replace(/^#\/?/, '') as Route;
@@ -80,30 +84,46 @@ function go(route: Route): void {
 async function loadPublic(): Promise<void> {
   S.load = 'loading';
   const ticket = seatCount.ticket();
+  const eventAtStart = eventVersion;
+  let switchedToUsd = false;
   try {
     const info = await api.publicInfo();
-    S.event = info.event;
+    if (eventAtStart === eventVersion) S.event = info.event;
     seatCount.applyRead(ticket, () => (S.reserved = info.reserved));
     S.banks = info.banks;
     // Offer dollars by default only when there is no naira account.
-    if (!S.banks.NGN && S.banks.USD) setCurrency('USD');
+    if (!S.banks.NGN && S.banks.USD && S.currency !== 'USD') {
+      setCurrency('USD');
+      switchedToUsd = true;
+    }
     S.load = 'ready';
   } catch {
     S.load = 'error';
   }
   render();
+  // render() keeps what was in the amount box; after a currency switch it must show the new default.
+  if (switchedToUsd) {
+    const amt = document.getElementById('amt') as HTMLInputElement | null;
+    if (amt) amt.value = String(S.amount);
+  }
 }
 
 async function loadAdmin(): Promise<void> {
   S.adminError = '';
   const ticket = seatCount.ticket();
+  const generation = adminGeneration;
+  const eventAtStart = eventVersion;
   try {
-    S.admin = await api.adminData();
+    const data = await api.adminData();
+    // Signed out while this was in flight: drop it.
+    if (generation !== adminGeneration) return;
+    S.admin = data;
     S.adminAuthed = true;
-    if (S.admin.event) S.event = S.admin.event;
-    const reservedNow = S.admin.reserved;
+    if (data.event && eventAtStart === eventVersion) S.event = data.event;
+    const reservedNow = data.reserved;
     seatCount.applyRead(ticket, () => (S.reserved = reservedNow));
   } catch (e) {
+    if (generation !== adminGeneration) return;
     if (e instanceof ApiError && e.status === 401) S.adminAuthed = false;
     else S.adminError = errorMessage(e);
   }
@@ -248,6 +268,7 @@ document.addEventListener('click', async (e) => {
         S.adminError = `Sign out did not complete: ${errorMessage(err)}`;
         return render();
       }
+      adminGeneration++;
       S.admin = null;
       S.adminAuthed = false;
       S.adminError = '';
@@ -334,6 +355,7 @@ async function submitEvent(data: FormData): Promise<void> {
       venue: String(data.get('venue') ?? ''),
       capacity: Number(data.get('capacity')),
     });
+    eventVersion++;
     S.event = event;
     if (S.admin) S.admin.event = event;
     S.adminNotice = 'Saved.';

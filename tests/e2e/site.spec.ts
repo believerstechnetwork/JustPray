@@ -208,11 +208,22 @@ test('organiser confirms a contribution and the total updates', async ({ page })
 
   await signIn(page);
   await page.getByRole('button', { name: 'Contributions', exact: true }).click();
+  // The exact confirmed naira total, from the line under the short figure ("₦245,000").
+  const confirmedNaira = async (): Promise<number> => {
+    const text = await page
+      .locator('.nums > div')
+      .filter({ hasText: 'Confirmed naira' })
+      .locator('small')
+      .textContent();
+    return Number((text ?? '').replace(/[^\d.]/g, ''));
+  };
+  const before = await confirmedNaira();
   const row = page.getByRole('row').filter({ hasText: reference });
   await expect(row).toContainText('Check bank');
   await row.getByRole('button', { name: 'Confirm' }).click();
   await expect(row).toContainText('Confirmed');
-  await expect(page.locator('.nums')).toContainText('Confirmed naira');
+  // Other tests share the backend and may confirm gifts too, so check it rose by at least ours.
+  await expect.poll(confirmedNaira).toBeGreaterThanOrEqual(before + 1234);
 });
 
 test('organiser can edit the gathering and the public page reflects it', async ({ page }) => {

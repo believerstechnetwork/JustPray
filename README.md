@@ -14,6 +14,8 @@ TypeScript) and a Supabase Postgres database. Confirmation emails go out through
    variables listed in `.env.example`. Mark the keys and passwords as secret.
 3. **Deploy.** Push to `main`. The site, the API (`/api/*`) and a daily keep-alive job (so Supabase's
    free plan does not pause the database) deploy together.
+4. **Create the gathering.** Open `/#/admin`, sign in with `ADMIN_PASSWORD`, and save the Event
+   editor with the title, date, time, venue and seats. Reservations stay closed until this is saved.
 
 Until a setting is present, the matching feature says so instead of failing: no database means
 "not connected yet", no bank details hide the transfer form, and no email settings mean bookings
