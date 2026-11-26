@@ -318,8 +318,10 @@ export function messageHtml(message: string, linkColour: string = C.blue): strin
     .map((p) => p.split('\n').map(inline).join('<br>'));
 }
 
+/** Put the first name in place of {first name}. A replacer function inserts it literally, so a
+ *  name like "$&" stays as typed. */
 const personalise = (text: string, first: string): string =>
-  text.replace(/\{\s*first name\s*\}/gi, first || 'friend');
+  text.replace(/\{\s*first name\s*\}/gi, () => first || 'friend');
 
 /** The event card in an announcement: an indigo strip with the date, then the details. */
 function eventCard(a: AnnouncementContent): string {
@@ -364,6 +366,9 @@ export function announcementEmail(input: AnnouncementInput): Email {
   const { announcement: a, name, email, siteUrl, unsubscribeUrl } = input;
   const site = siteUrl.replace(/\/+$/, '');
   const first = firstName(name);
+  // Plain text gets the name as typed. The HTML gets it only after the message's formatting
+  // (bold, links) has been turned into HTML, and escaped, so a name such as
+  // "[Click](https://…)" can never become a link.
   const message = personalise(a.message, first);
   const when = [eventDates(a.date, a.endDate), a.time ? displayTime(a.time) : '']
     .filter(Boolean)
@@ -382,8 +387,8 @@ export function announcementEmail(input: AnnouncementInput): Email {
     '',
     `You're getting this because you asked to hear about future events. Unsubscribe or manage your emails: ${unsubscribeUrl}`,
   ].join('\n');
-  const body = `${messageHtml(message)
-    .map((p) => para(p))
+  const body = `${messageHtml(a.message)
+    .map((p) => para(personalise(p, esc(first))))
     .join('\n')}
 ${eventCard(a)}
 ${a.linkUrl ? `<div>${button(esc(a.linkLabel || 'Learn more'), a.linkUrl, 'solid')}</div>` : ''}`;

@@ -202,9 +202,8 @@ begin
 end;
 $$;
 
--- Claim the next batch of queued emails, never more than p_daily sent in the last 24 hours.
--- Emails claimed by a run that died more than 10 minutes ago go back in the queue. The lock
--- makes overlapping runs take turns, so the daily limit holds.
+-- Claim the next batch of queued emails, never more than p_daily sent (or being sent) in the
+-- last 24 hours. The lock makes overlapping runs take turns, so the daily limit holds.
 create or replace function public.claim_announcement_sends(p_limit integer, p_daily integer)
 returns table (id bigint, announcement_id bigint, name text, email text, unsub_token text)
 language plpgsql
@@ -215,12 +214,20 @@ declare
   take integer;
 begin
   perform pg_advisory_xact_lock(727211);
+  -- A claim older than 10 minutes belongs to a run that died, maybe after the email went out.
+  -- Close it as failed rather than risk sending it twice.
   update public.announcement_sends s
-  set status = 'pending'
+  set status = 'failed', attempts = s.attempts + 1, error = 'Sending did not finish'
   where s.status = 'sending' and s.claimed_at < now() - interval '10 minutes';
+  -- Anyone who unsubscribed since publishing gets nothing more.
+  update public.announcement_sends s
+  set status = 'skipped'
+  where s.status = 'pending'
+    and exists (select 1 from public.unsubscribes u where u.email = s.email);
+  -- Emails being sent right now count toward today's limit too.
   select count(*) into sent_today
   from public.announcement_sends s
-  where s.sent_at > now() - interval '24 hours';
+  where s.sent_at > now() - interval '24 hours' or s.status = 'sending';
   take := greatest(0, least(p_limit, p_daily - sent_today));
   return query
     update public.announcement_sends s
@@ -236,8 +243,15 @@ begin
 end;
 $$;
 
--- Record one send: sent (and counted), or back in the queue, failing after 3 attempts.
-create or replace function public.finish_announcement_send(p_id bigint, p_ok boolean, p_error text)
+-- Record one send: sent (and counted); skipped (unsubscribed); or back in the queue, failing
+-- after 3 attempts. Only a row still claimed for sending changes.
+drop function if exists public.finish_announcement_send(bigint, boolean, text);
+create or replace function public.finish_announcement_send(
+  p_id bigint,
+  p_ok boolean,
+  p_error text,
+  p_skip boolean default false
+)
 returns void
 language plpgsql
 set search_path = public
@@ -245,7 +259,10 @@ as $$
 declare
   ann bigint;
 begin
-  if p_ok then
+  if p_skip then
+    update public.announcement_sends s set status = 'skipped', error = left(p_error, 200)
+    where s.id = p_id and s.status = 'sending';
+  elsif p_ok then
     update public.announcement_sends s
     set status = 'sent', sent_at = now(), attempts = s.attempts + 1, error = null
     where s.id = p_id and s.status = 'sending'
@@ -348,7 +365,7 @@ $$;
 revoke execute on function public.updates_audience(text, text, integer) from public, anon, authenticated;
 revoke execute on function public.publish_announcement(bigint, text) from public, anon, authenticated;
 revoke execute on function public.claim_announcement_sends(integer, integer) from public, anon, authenticated;
-revoke execute on function public.finish_announcement_send(bigint, boolean, text) from public, anon, authenticated;
+revoke execute on function public.finish_announcement_send(bigint, boolean, text, boolean) from public, anon, authenticated;
 revoke execute on function public.unsubscribe_by_token(text) from public, anon, authenticated;
 revoke execute on function public.import_contacts(jsonb, text) from public, anon, authenticated;
 revoke execute on function public.resubscribe_by_token(text) from public, anon, authenticated;
@@ -358,7 +375,7 @@ grant execute on function public.subscription_by_token(text) to service_role;
 grant execute on function public.updates_audience(text, text, integer) to service_role;
 grant execute on function public.publish_announcement(bigint, text) to service_role;
 grant execute on function public.claim_announcement_sends(integer, integer) to service_role;
-grant execute on function public.finish_announcement_send(bigint, boolean, text) to service_role;
+grant execute on function public.finish_announcement_send(bigint, boolean, text, boolean) to service_role;
 grant execute on function public.unsubscribe_by_token(text) to service_role;
 grant execute on function public.import_contacts(jsonb, text) to service_role;
 

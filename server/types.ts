@@ -174,8 +174,10 @@ export interface Db {
   /** Claim up to `limit` queued emails, never more than `dailyLimit` sent in the last 24 hours.
    *  Emails claimed by a run that died more than 10 minutes ago are claimed again. */
   claimOutbox(limit: number, dailyLimit: number): Promise<OutboxItem[]>;
-  /** Record the result of sending one; a failure is retried up to 3 attempts in all. */
-  finishOutbox(id: number, ok: boolean, error?: string): Promise<void>;
+  /** Record the result of sending one; a failure is retried up to 3 attempts in all. With
+   *  `skip`, it is closed without sending (the person unsubscribed). */
+  finishOutbox(id: number, ok: boolean, error?: string, skip?: boolean): Promise<void>;
+  isUnsubscribed(email: string): Promise<boolean>;
   /** Unsubscribe the person behind an unsubscribe link. Returns their email, or null. */
   unsubscribe(token: string): Promise<string | null>;
   /** Undo an unsubscribe from the same link. Returns their email, or null. */

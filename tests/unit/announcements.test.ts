@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { announcementEmail } from '../../server/emails';
 import { handleApi, type ApiDeps } from '../../server/api';
 import { createSession } from '../../server/auth';
-import { MemoryMailer } from '../../server/mailer';
+import { MemoryMailer, ResendMailer } from '../../server/mailer';
 import { MemoryDb } from '../../server/memory-db';
 import { processOutbox } from '../../server/outbox';
 import { parseCsv, rowsToContacts } from '../../src/lib/contacts';
@@ -315,5 +316,155 @@ describe('publishing and sending', () => {
     expect(text).toContain('Where: Lagos · venue to be announced');
     expect(text).toContain('Theme: To be announced');
     expect(text).toMatch(/^Hi Ada,/);
+  });
+});
+
+describe('review fixes', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('never turns a visitor name into a link, and inserts it literally', () => {
+    const a = {
+      title: 'T',
+      date: '2027-09-09',
+      venue: 'Lagos',
+      summary: 's',
+      subject: 'S',
+      message: 'Hi {first name},\n\nSee [our site](https://example.org).',
+    };
+    const evil = announcementEmail({
+      announcement: a,
+      name: '[Verify](https://evil.example/login)',
+      email: 'x@y.co',
+      siteUrl: 'https://jp.test',
+      unsubscribeUrl: 'https://jp.test/u',
+    });
+    expect(evil.html).not.toContain('href="https://evil.example');
+    expect(evil.html).toContain('[Verify](https://evil.example/login)');
+    expect(evil.html).toContain('href="https://example.org"');
+    expect(evil.text).toContain('Hi [Verify](https://evil.example/login),');
+    const dollar = announcementEmail({
+      announcement: a,
+      name: '$& Obi',
+      email: 'x@y.co',
+      siteUrl: 'https://jp.test',
+      unsubscribeUrl: 'u',
+    });
+    expect(dollar.text).toMatch(/^Hi \$&,/);
+  });
+
+  it('reads a headerless first row with an address, and a semicolon CSV with a quoted comma', () => {
+    expect(
+      rowsToContacts([
+        ['Ada', 'email@example.com'],
+        ['Bola', 'b@x.co'],
+      ]).contacts,
+    ).toEqual([
+      { name: 'Ada', email: 'email@example.com' },
+      { name: 'Bola', email: 'b@x.co' },
+    ]);
+    const rows = parseCsv('"Full name, surname";Email\nAda;a@b.co');
+    expect(rows).toEqual([
+      ['Full name, surname', 'Email'],
+      ['Ada', 'a@b.co'],
+    ]);
+    expect(rowsToContacts(rows).contacts).toEqual([{ name: 'Ada', email: 'a@b.co' }]);
+  });
+
+  it('forwards extra headers through Resend', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await new ResendMailer('key', 'Just Pray <hi@x.co>').send({
+      to: 'a@b.co',
+      subject: 's',
+      text: 't',
+      html: 'h',
+      headers: { 'List-Unsubscribe': '<https://x/u>' },
+    });
+    const init = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1];
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      headers: { 'List-Unsubscribe': '<https://x/u>' },
+    });
+  });
+
+  it('skips a claimed email if the person unsubscribed before it went out', async () => {
+    const id = (
+      await db.createAnnouncement({
+        ...ANN,
+        endDate: null,
+        time: null,
+        theme: null,
+        imageUrl: null,
+        linkUrl: null,
+        linkLabel: null,
+      })
+    ).id;
+    db.contacts.push({ name: 'A', email: 'a@x.co', source: 'Sheet' });
+    await db.publishAnnouncement(id, 'imported');
+    const claimed = await db.claimOutbox(10, 99);
+    expect(claimed).toHaveLength(1);
+    db.unsubscribed.add('a@x.co');
+    // The batch already holds the claim; the send loop re-checks just before sending.
+    db.claimOutbox = async () => claimed;
+    await processOutbox({ db, mailer, siteUrl: 'https://jp.test', limit: 10, dailyLimit: 99 });
+    expect(mailer.sent).toHaveLength(0);
+    expect(db.outbox[0]?.status).toBe('skipped');
+  });
+
+  it('never sends twice when recording a delivered email fails', async () => {
+    const id = (
+      await db.createAnnouncement({
+        ...ANN,
+        endDate: null,
+        time: null,
+        theme: null,
+        imageUrl: null,
+        linkUrl: null,
+        linkLabel: null,
+      })
+    ).id;
+    db.contacts.push({ name: 'A', email: 'a@x.co', source: 'Sheet' });
+    await db.publishAnnouncement(id, 'imported');
+    const realFinish = db.finishOutbox.bind(db);
+    db.finishOutbox = async (i, ok, e, skip) => {
+      if (ok) throw new Error('db down');
+      return realFinish(i, ok, e, skip);
+    };
+    await processOutbox({ db, mailer, siteUrl: 'https://jp.test', limit: 10, dailyLimit: 99 });
+    expect(mailer.sent).toHaveLength(1);
+    expect(db.outbox[0]?.status).toBe('sending');
+    // Later runs: still claimed, then closed as failed once stale; never sent again.
+    db.finishOutbox = realFinish;
+    await processOutbox({ db, mailer, siteUrl: 'https://jp.test', limit: 10, dailyLimit: 99 });
+    db.outbox[0]!.claimedAt -= 11 * 60_000;
+    await processOutbox({ db, mailer, siteUrl: 'https://jp.test', limit: 10, dailyLimit: 99 });
+    expect(db.outbox[0]?.status).toBe('failed');
+    expect(mailer.sent).toHaveLength(1);
+  });
+
+  it('counts emails being sent toward the daily limit', async () => {
+    const id = (
+      await db.createAnnouncement({
+        ...ANN,
+        endDate: null,
+        time: null,
+        theme: null,
+        imageUrl: null,
+        linkUrl: null,
+        linkLabel: null,
+      })
+    ).id;
+    for (const e of ['a@x.co', 'b@x.co', 'c@x.co'])
+      db.contacts.push({ name: 'A', email: e, source: 'S' });
+    await db.publishAnnouncement(id, 'imported');
+    expect(await db.claimOutbox(2, 2)).toHaveLength(2);
+    expect(await db.claimOutbox(2, 2)).toHaveLength(0);
+  });
+
+  it('still serves the gathering when the announcements query fails', async () => {
+    db.upcomingAnnouncements = () => Promise.reject(new Error('no table yet'));
+    const { status, data } = await call('GET', '/api/public', undefined, { cookie: '' });
+    expect(status).toBe(200);
+    expect(data.event).toMatchObject({ title: 'Just Pray' });
+    expect(data.upcoming).toEqual([]);
   });
 });

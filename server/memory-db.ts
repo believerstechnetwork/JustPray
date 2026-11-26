@@ -271,10 +271,19 @@ export class MemoryDb implements Db {
 
   async claimOutbox(limit: number, dailyLimit: number) {
     const now = this.now().getTime();
+    // A claim older than 10 minutes belongs to a run that died, maybe after sending: close it as
+    // failed rather than risk sending twice.
     for (const o of this.outbox)
-      if (o.status === 'sending' && now - o.claimedAt > 10 * 60_000) o.status = 'pending';
+      if (o.status === 'sending' && now - o.claimedAt > 10 * 60_000) {
+        o.status = 'failed';
+        o.attempts++;
+      }
+    // Anyone who unsubscribed since publishing gets nothing more.
+    for (const o of this.outbox)
+      if (o.status === 'pending' && this.unsubscribed.has(o.email)) o.status = 'skipped';
+    // Emails being sent right now count toward today's limit too.
     const sentToday = this.outbox.filter(
-      (o) => o.sentAt !== null && now - o.sentAt < 86_400_000,
+      (o) => (o.sentAt !== null && now - o.sentAt < 86_400_000) || o.status === 'sending',
     ).length;
     const n = Math.max(0, Math.min(limit, dailyLimit - sentToday));
     const claimed = this.outbox.filter((o) => o.status === 'pending').slice(0, n);
@@ -288,9 +297,17 @@ export class MemoryDb implements Db {
     }));
   }
 
-  async finishOutbox(id: number, ok: boolean): Promise<void> {
+  async isUnsubscribed(email: string): Promise<boolean> {
+    return this.unsubscribed.has(email);
+  }
+
+  async finishOutbox(id: number, ok: boolean, _error?: string, skip = false): Promise<void> {
     const o = this.outbox.find((x) => x.id === id);
-    if (!o) return;
+    if (!o || o.status !== 'sending') return;
+    if (skip) {
+      o.status = 'skipped';
+      return;
+    }
     o.attempts++;
     if (ok) {
       Object.assign(o, { status: 'sent', sentAt: this.now().getTime() });

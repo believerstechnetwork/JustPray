@@ -179,7 +179,14 @@ function list(): string {
   return `<div class="block"><div class="block-h"><h2>Other BTN events</h2><button class="btn small ind" type="button" data-action="ann-new">New announcement</button></div>
   ${a.notice ? `<p class="fine" role="status" style="margin:0 0 6px">${esc(a.notice)}</p>` : ''}
   <p class="fine" style="margin:0 0 6px">For events beyond the monthly gathering, such as a conference. Publishing one emails your mailing list and lists the event on the home page until it ends.</p>
-  ${a.list === null ? '<div class="spin"></div>' : rows || '<div class="empty"><h3>No announcements yet</h3><p>Announce a conference or another BTN event to your mailing list.</p></div>'}</div>
+  ${
+    a.list === null
+      ? a.loadFailed
+        ? `<p class="err" role="alert">${esc(a.error || 'The announcements could not be loaded.')}</p><button class="btn small ghost" type="button" data-action="ann-retry">Try again</button>`
+        : '<div class="spin"></div>'
+      : rows ||
+        '<div class="empty"><h3>No announcements yet</h3><p>Announce a conference or another BTN event to your mailing list.</p></div>'
+  }</div>
   ${mailingList()}`;
 }
 

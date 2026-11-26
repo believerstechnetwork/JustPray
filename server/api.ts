@@ -410,7 +410,13 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
       const [event, reserved, upcoming] = await Promise.all([
         db().currentEvent(),
         db().reservedCount(),
-        db().upcomingAnnouncements(lagosDay(new Date()), 3),
+        // Optional extra: if it fails, the gathering and seat count still load.
+        db()
+          .upcomingAnnouncements(lagosDay(new Date()), 3)
+          .catch((e: unknown) => {
+            log('Could not load upcoming announcements', e);
+            return [];
+          }),
       ]);
       return json(200, {
         event,

@@ -348,6 +348,7 @@ async function copy(button: HTMLElement): Promise<void> {
 /* ---------- announcements ---------- */
 
 async function loadAnnouncements(): Promise<void> {
+  S.ann.loadFailed = false;
   try {
     const res = await api.announcements();
     S.ann.list = res.announcements;
@@ -358,6 +359,7 @@ async function loadAnnouncements(): Promise<void> {
     if (!S.ann.testTo) S.ann.testTo = res.testTo;
   } catch (e) {
     S.ann.error = errorMessage(e);
+    S.ann.loadFailed = true;
     if (e instanceof ApiError && e.status === 401) S.adminAuthed = false;
   }
   if (S.page === 'admin' && S.tab === 'announcements') render();
@@ -403,24 +405,42 @@ function refreshAnnPreview(): void {
   }, 200);
 }
 
-/** Save the form as a draft (or the published event's site details). Returns its id. */
+/** Bumped whenever a different announcement (or the list) is opened, so a save that finishes
+ *  afterwards updates the list but never switches the editor back to what it saved. */
+let annEditor = 0;
+
+/** Save the form as a draft (or the published event's site details). Returns its id, or null
+ *  when it failed or the organiser has since moved to another announcement. */
 async function saveAnnouncement(): Promise<number | null> {
   syncAnnForm();
   S.ann.error = '';
   S.ann.notice = '';
+  const editor = annEditor;
+  const editing = S.ann.editing;
   try {
     const { announcement } =
-      typeof S.ann.editing === 'number'
-        ? await api.updateAnnouncement(S.ann.editing, S.ann.form)
+      typeof editing === 'number'
+        ? await api.updateAnnouncement(editing, S.ann.form)
         : await api.createAnnouncement(S.ann.form);
-    S.ann.editing = announcement.id;
     const list = S.ann.list ?? [];
     S.ann.list = [announcement, ...list.filter((x) => x.id !== announcement.id)];
+    if (editor !== annEditor) return null;
+    S.ann.editing = announcement.id;
+    if (announcement.status === 'published') void refreshUpcoming();
     return announcement.id;
   } catch (e) {
-    S.ann.error = errorMessage(e);
+    if (editor === annEditor) S.ann.error = errorMessage(e);
     if (e instanceof ApiError && e.status === 401) S.adminAuthed = false;
     return null;
+  }
+}
+
+/** Reload the other-events list the home page shows, after publishing or editing one. */
+async function refreshUpcoming(): Promise<void> {
+  try {
+    S.upcoming = (await api.publicInfo()).upcoming ?? [];
+  } catch {
+    /* the next page load picks it up */
   }
 }
 
@@ -432,6 +452,7 @@ async function annAction(action: string, el: HTMLElement): Promise<void> {
     a.editing = x.id;
     a.form = { ...x };
     a.error = a.notice = '';
+    annEditor++;
     freshForm = true;
     return render();
   }
@@ -455,13 +476,19 @@ async function annAction(action: string, el: HTMLElement): Promise<void> {
       a.editing = 'new';
       a.form = blankAnnouncement();
       a.error = a.notice = '';
+      annEditor++;
       freshForm = true;
       return render();
     case 'ann-back':
+      annEditor++;
       a.editing = null;
       a.panel = 'list';
       a.importing = null;
       a.error = a.notice = '';
+      render();
+      return loadAnnouncements();
+    case 'ann-retry':
+      a.error = '';
       render();
       return loadAnnouncements();
     case 'ann-people':
@@ -524,6 +551,7 @@ async function annAction(action: string, el: HTMLElement): Promise<void> {
         a.confirming = false;
         a.editing = null;
         a.notice = `Published. Emailing ${announcement.recipients} people.`;
+        void refreshUpcoming();
         freshForm = true;
         S.busy = false;
         render();
@@ -619,6 +647,7 @@ document.addEventListener('click', async (e) => {
     S.adminNotice = '';
     S.adminError = '';
     if (S.tab === 'announcements') {
+      annEditor++;
       S.ann.editing = null;
       S.ann.panel = 'list';
       S.ann.importing = null;

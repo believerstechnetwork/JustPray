@@ -25,7 +25,9 @@ export function rowsToContacts(rows: unknown[][]): ParsedList {
   if (!table.length) return { contacts: [], invalid: 0, duplicates: 0 };
 
   const head = (table[0] ?? []).map((h) => h.toLowerCase());
-  const find = (re: RegExp): number => head.findIndex((h) => re.test(h));
+  // A heading is a label, never an address: "email@example.com" in a first row of data is not
+  // the heading "Email".
+  const find = (re: RegExp): number => head.findIndex((h) => re.test(h) && !EMAIL_RE.test(h));
   let emailCol = find(/e-?mail/);
   const hasHeadings = emailCol >= 0;
   if (!hasHeadings) {
@@ -81,10 +83,18 @@ export function parseCsv(text: string): string[][] {
   let quoted = false;
   // Drop the byte-order mark some spreadsheet apps put at the start of a CSV.
   const src = text.replace(/^\uFEFF/, '');
-  // Semicolons separate cells in some regions' spreadsheet exports.
-  const firstLine = src.split(/\r?\n/, 1)[0] ?? '';
-  const sep =
-    (firstLine.match(/;/g) ?? []).length > (firstLine.match(/,/g) ?? []).length ? ';' : ',';
+  // Semicolons separate cells in some regions' spreadsheet exports. Count each in the first
+  // record, outside quotes, so a quoted "Obi, Ada" does not decide it.
+  let commas = 0;
+  let semis = 0;
+  for (let i = 0, q = false; i < src.length; i++) {
+    const ch = src[i];
+    if (ch === '"') q = !q;
+    else if (!q && (ch === '\n' || ch === '\r')) break;
+    else if (!q && ch === ',') commas++;
+    else if (!q && ch === ';') semis++;
+  }
+  const sep = semis > commas ? ';' : ',';
   for (let i = 0; i < src.length; i++) {
     const ch = src[i];
     if (quoted) {

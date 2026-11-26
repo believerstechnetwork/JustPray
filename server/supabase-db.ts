@@ -438,14 +438,22 @@ export class SupabaseDb implements Db {
     }));
   }
 
-  async finishOutbox(id: number, ok: boolean, error?: string): Promise<void> {
+  async finishOutbox(id: number, ok: boolean, error?: string, skip = false): Promise<void> {
     check(
       await this.sb.rpc('finish_announcement_send', {
         p_id: id,
         p_ok: ok,
         p_error: error ?? null,
+        p_skip: skip,
       }),
     );
+  }
+
+  async isUnsubscribed(email: string): Promise<boolean> {
+    const rows = check(
+      await this.sb.from('unsubscribes').select('id').eq('email', email).limit(1),
+    ) as Row[];
+    return rows.length > 0;
   }
 
   async resubscribe(token: string): Promise<string | null> {

@@ -68,6 +68,8 @@ export interface UiState {
   /** Organiser announcements: the list, who they go to, and the one being edited. */
   ann: {
     list: Announcement[] | null;
+    /** The last load of the list failed (shown with a Try again button). */
+    loadFailed: boolean;
     audience: number;
     counts: Record<AudienceScope, number>;
     testTo: string;
@@ -152,6 +154,7 @@ export const S: UiState = {
     list: null,
     audience: 0,
     editing: null,
+    loadFailed: false,
     counts: { all: 0, booked: 0, imported: 0 },
     testTo: '',
     dailyLimit: 350,

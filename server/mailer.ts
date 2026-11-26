@@ -61,6 +61,8 @@ export class ResendMailer implements Mailer {
         text: email.text,
         html: email.html,
         ...(this.replyTo ? { reply_to: this.replyTo } : {}),
+        // e.g. List-Unsubscribe on announcements, so mail apps show their Unsubscribe button.
+        ...(email.headers ? { headers: email.headers } : {}),
       }),
       signal: AbortSignal.timeout(10000),
     });

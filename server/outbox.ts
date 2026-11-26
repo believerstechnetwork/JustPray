@@ -34,6 +34,11 @@ export async function processOutbox(deps: OutboxDeps): Promise<{ sent: number; f
       failed++;
       continue;
     }
+    // Unsubscribed since this email was queued: do not send it.
+    if (await db.isUnsubscribed(item.email)) {
+      await db.finishOutbox(item.id, false, 'unsubscribed', true);
+      continue;
+    }
     const unsubscribeUrl = `${site}/#/unsubscribe/${item.unsubToken}`;
     const email = announcementEmail({
       announcement: {
@@ -59,12 +64,29 @@ export async function processOutbox(deps: OutboxDeps): Promise<{ sent: number; f
           'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
         },
       });
-      await db.finishOutbox(item.id, true);
-      sent++;
     } catch (e) {
       log(`Announcement ${a.id} to outbox item ${item.id} failed (${mailer.kind})`, e);
-      await db.finishOutbox(item.id, false, e instanceof Error ? e.message.slice(0, 200) : 'error');
+      await db
+        .finishOutbox(item.id, false, e instanceof Error ? e.message.slice(0, 200) : 'error')
+        .catch((err: unknown) => log(`Could not record failure of outbox item ${item.id}`, err));
       failed++;
+      continue;
+    }
+    // Delivered. Recording it must never turn into a retry, which would send it twice: try a
+    // few times, and if it still fails leave the row as claimed. An unfinished claim is closed
+    // as failed (never sent again) once it is 10 minutes old.
+    sent++;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await db.finishOutbox(item.id, true);
+        break;
+      } catch (e) {
+        if (attempt >= 3) {
+          log(`Sent outbox item ${item.id} but could not record it`, e);
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 300 * attempt));
+      }
     }
   }
   return { sent, failed };
