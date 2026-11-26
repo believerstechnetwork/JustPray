@@ -6,6 +6,7 @@ import { MemoryMailer, ResendMailer } from '../../server/mailer';
 import { MemoryDb } from '../../server/memory-db';
 import { processOutbox } from '../../server/outbox';
 import { parseCsv, rowsToContacts } from '../../src/lib/contacts';
+import { dateBlock } from '../../src/views/announcements';
 
 const EVENT = {
   title: 'Just Pray',
@@ -76,6 +77,32 @@ const book = (email: string, updates: boolean) =>
     privacy: 'on',
     ...(updates ? { updates: 'on' } : {}),
   });
+
+describe('the date drawn on an event card', () => {
+  const text = (html: string): string[] =>
+    [...html.matchAll(/class="(m|d|y)">([^<]*)</g)].map((m) => `${m[1]}:${m[2]}`);
+
+  it('shows one day, a range in one month, and a range across months or years', () => {
+    expect(text(dateBlock('2027-09-18'))).toEqual(['m:Sep', 'd:18', 'y:2027']);
+    expect(text(dateBlock('2027-09-18', '2027-09-19'))).toEqual(['m:Sep', 'd:18–19', 'y:2027']);
+    expect(text(dateBlock('2027-09-30', '2027-10-02'))).toEqual([
+      'm:Sep – Oct',
+      'd:30–2',
+      'y:2027',
+    ]);
+    expect(text(dateBlock('2027-12-30', '2028-01-01'))).toEqual([
+      'm:Dec – Jan',
+      'd:30–1',
+      'y:2027–28',
+    ]);
+  });
+
+  it('ignores an end date that is not after the start, and is hidden from screen readers', () => {
+    expect(text(dateBlock('2027-09-18', '2027-09-18'))).toEqual(['m:Sep', 'd:18', 'y:2027']);
+    expect(dateBlock('2027-09-18')).toContain('aria-hidden="true"');
+    expect(dateBlock('not a date')).toBe('');
+  });
+});
 
 describe('reading a spreadsheet', () => {
   it('uses the Name and Email headings, keeps each email once and counts bad rows', () => {

@@ -392,6 +392,24 @@ test('organiser previews, tests and publishes an announcement that then shows on
   await expect(card).toBeVisible();
   await expect(card).toContainText('Theme to be announced');
   await expect(card).toContainText('Venue to be announced');
+
+  // The header's Events link jumps to the section from any page (behind Menu on phones).
+  await page.goto('/#/support');
+  if (test.info().project.name === 'mobile') {
+    await page.getByRole('button', { name: 'Menu' }).click();
+    await page
+      .getByRole('navigation', { name: 'Mobile' })
+      .getByRole('button', { name: 'Events' })
+      .click();
+  } else {
+    await page
+      .getByRole('navigation', { name: 'Main' })
+      .getByRole('button', { name: 'Events' })
+      .click();
+  }
+  await expect(page).toHaveURL(/#\/home$/);
+  await expect(page.locator('#events-h')).toBeFocused();
+  await expect(page.locator('#events-h')).toBeInViewport();
 });
 
 test('the email preferences page unsubscribes, and can undo it', async ({ page }) => {

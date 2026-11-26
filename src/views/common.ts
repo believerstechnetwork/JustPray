@@ -58,12 +58,16 @@ const logo = (): string => `<img class="logo" src="${IMG.logo}" alt="Believers T
 /** The top bar. It sits on the cloth of the section that follows it. */
 export function nav(): string {
   const cur = (p: Route): string => (S.page === p ? 'aria-current="page"' : '');
+  // Shown only while another BTN event is coming up; jumps to it on the home page.
+  const events = S.upcoming.length
+    ? '<button data-action="events" type="button">Events</button>'
+    : '';
   return `${loadBanner()}<header class="nav">
   <button class="brand" data-route="home" type="button" aria-label="Just Pray, home">${logo()}<span class="sep"></span><span class="wm">Just Pray</span></button>
-  <nav class="nav-links" aria-label="Main"><button data-route="home" ${cur('home')} type="button">About</button><button data-route="register" ${cur('register')} type="button">Next gathering</button><button data-route="support" ${cur('support')} type="button">Support</button></nav>
+  <nav class="nav-links" aria-label="Main"><button data-route="home" ${cur('home')} type="button">About</button><button data-route="register" ${cur('register')} type="button">Next gathering</button>${events}<button data-route="support" ${cur('support')} type="button">Support</button></nav>
   <button class="btn gold small" data-route="register" type="button">Reserve a seat</button>
   <button class="menu-btn" data-action="menu" type="button" aria-expanded="${S.menu}" aria-controls="mnav">${S.menu ? 'Close' : 'Menu'}</button>
-  <nav id="mnav" class="mobile-nav ${S.menu ? 'open' : ''}" aria-label="Mobile"><button data-route="home" type="button">About</button><button data-route="register" type="button">Reserve a seat</button><button data-route="support" type="button">Support</button><button data-action="share" type="button">Share</button></nav></header>`;
+  <nav id="mnav" class="mobile-nav ${S.menu ? 'open' : ''}" aria-label="Mobile"><button data-route="home" type="button">About</button><button data-route="register" type="button">Reserve a seat</button>${events}<button data-route="support" type="button">Support</button><button data-action="share" type="button">Share</button></nav></header>`;
 }
 
 export const footer = (): string =>

@@ -41,7 +41,7 @@ export function home(): string {
  ${slip()}</section>
 <section class="when"><div class="wrap"><div><h2>The next gathering</h2>${nextDate()}</div>
  <div class="cloth seatcloth">${pattern(6, 6, 8, 0.06)}${seatWall()}<div class="row"><div class="count">${when(() => `${seatsLeft()} seats left`, 'Seats')}<small>Every light is a seat</small></div>${btn(`Reserve a seat ${ICON.arrow}`, 'register', 'gold')}</div></div></div></section>
-<section class="burden"><div class="wrap"><div><h2 class="big">The burden</h2><p class="lead2">People who build technology carry a lot, and prayer is usually the first thing to get squeezed out.</p><p>Deadlines, layoffs, long commutes, family needs and the pressure to keep up leave little room to stop. Many of us believe God answers prayer and still go for weeks without praying with anyone.</p><p>We carry this burden for each other: that believers in tech would not face their work alone, or pray alone.</p></div>
+${upcomingSection()}<section class="burden"><div class="wrap"><div><h2 class="big">The burden</h2><p class="lead2">People who build technology carry a lot, and prayer is usually the first thing to get squeezed out.</p><p>Deadlines, layoffs, long commutes, family needs and the pressure to keep up leave little room to stop. Many of us believe God answers prayer and still go for weeks without praying with anyone.</p><p>We carry this burden for each other: that believers in tech would not face their work alone, or pray alone.</p></div>
  <figure class="pframe"><img src="${IMG.head2}" style="object-position:50% 78%" alt="A man with his hands behind his head and his eyes closed" loading="lazy"></figure></div></section>
 <section class="cloth goal">${pattern(14, 7, 13, 0.07)}<div class="wrap"><figure class="frame"><img src="${IMG.doneA}" style="object-position:50% 72%" alt="A man with his hands raised in worship" loading="lazy"></figure>
  <div><h2 class="big">The goal</h2><p class="lead2">One protected afternoon each month where tech workers in Lagos stand in the gap together.</p>
@@ -53,5 +53,5 @@ export function home(): string {
  <div class="tile"><figure class="pframe"><img src="${IMG.t3}" style="object-position:60% 50%" alt="Attendees in BTN shirts talking outside the venue" loading="lazy"></figure><h3>Go back to work</h3><p>We return to our jobs and homes more committed to praying through the month.</p></div>
 </div></div></section>
 <section class="cloth verse">${pattern(14, 6, 17, 0.22)}<div class="q"><blockquote>“And I sought for a man among them, that should make up the hedge, and stand in the gap before me for the land.”<cite>Ezekiel 22:30 (KJV)</cite></blockquote></div></section>
-${upcomingSection()}<section class="close"><h2>Free to attend.</h2>${btn(`Reserve a seat ${ICON.arrow}`, 'register', 'gold')}</section>${footer()}`;
+<section class="close"><h2>Free to attend.</h2>${btn(`Reserve a seat ${ICON.arrow}`, 'register', 'gold')}</section>${footer()}`;
 }

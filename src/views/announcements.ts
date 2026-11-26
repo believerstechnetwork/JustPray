@@ -2,6 +2,7 @@ import { announcementEmail, eventDates, themeLine, venueLine } from '../../serve
 import type { Announcement, AnnouncementForm, UpcomingEvent } from '../data/types';
 import { IMG } from '../images';
 import { displayTime, esc, parseTime } from '../lib/format';
+import { pattern } from '../lib/cloth';
 import { S } from '../state';
 import { ICON } from './common';
 
@@ -43,19 +44,43 @@ const theme = (e: CardFields): string => {
     : `<p class="up-theme">“${esc(t)}”</p>`;
 };
 
-/** One event as the home page lists it. */
+const PIN = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/></svg>`;
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** The date drawn large on the card: month, day (or days) and year. Decorative, since the line
+ *  above the title says the same in words. */
+export function dateBlock(date: string, endDate?: string | null): string {
+  const [y, m, d] = date.split('-').map(Number);
+  if (!y || !m || !d) return '';
+  const end = endDate && endDate > date ? endDate.split('-').map(Number) : null;
+  const [ey, em, ed] = end ?? [y, m, d];
+  const mon = (i: number): string => MONTHS[i - 1] ?? '';
+  const month = em === m && ey === y ? mon(m) : `${mon(m)} – ${mon(em ?? m)}`;
+  const days = end ? `${d}–${ed}` : String(d);
+  const year = ey === y ? String(y) : `${y}–${String(ey).slice(-2)}`;
+  return `<span class="up-date" aria-hidden="true"><span class="m">${month}</span><span class="d">${days}</span><span class="y">${year}</span></span>`;
+}
+
+/** One event as the home page lists it. With a picture, the date sits on it as a small tag;
+ *  without one, the date is drawn large on the cloth, so the card never looks half empty. */
 export function upcomingCard(e: CardFields): string {
   const link = e.linkUrl
     ? `<a class="btn small ghost" href="${esc(e.linkUrl)}" target="_blank" rel="noopener">${esc(e.linkLabel || 'Learn more')} ${EXTERNAL}<span class="sr"> (opens in a new tab)</span></a>`
     : '';
-  return `<article class="up-card">${e.imageUrl ? `<figure class="up-img"><img src="${esc(e.imageUrl)}" alt="" loading="lazy"></figure>` : ''}
-  <div class="up-body"><span class="up-when">${ICON.cal}${esc(when(e))}</span><h3>${esc(e.title || 'Event title')}</h3>${theme(e)}<p>${esc(e.summary || 'A sentence or two about the event.')}</p><span class="up-where">${esc(venueLine(e) || 'Venue')}</span>${link}</div></article>`;
+  const date = e.date ? dateBlock(e.date, e.endDate) : '';
+  const face = e.imageUrl
+    ? `<figure class="up-face up-img"><img src="${esc(e.imageUrl)}" alt="" loading="lazy">${date}</figure>`
+    : `<div class="up-face cloth">${pattern(8, 5, 21, 0.09)}${date}</div>`;
+  return `<article class="up-card">${face}
+  <div class="up-body"><span class="up-when">${ICON.cal}${esc(when(e))}</span><h3>${esc(e.title || 'Event title')}</h3>${theme(e)}<p class="up-sum">${esc(e.summary || 'A sentence or two about the event.')}</p><span class="up-where">${PIN}${esc(venueLine(e) || 'Venue')}</span>${link}</div></article>`;
 }
 
-/** The home-page section. Nothing at all when no other events are coming up. */
+/** The home-page section, right after the next gathering. Nothing at all when no other events are
+ *  coming up. The header's "Events" link jumps here. */
 export function upcomingSection(): string {
   if (!S.upcoming.length) return '';
-  return `<section class="upcoming"><div class="wrap"><div class="up-h"><h2 class="sec-h">Also from Believers Tech Network</h2><p>Other events from the community behind Just Pray.</p></div>
+  return `<section class="upcoming" id="events" aria-labelledby="events-h"><div class="wrap"><div class="up-h"><h2 class="sec-h" id="events-h" tabindex="-1">Also from Believers Tech Network</h2><p>Other events from the community behind Just Pray.</p></div>
   <div class="up-list${S.upcoming.length === 1 ? ' one' : ''}">${S.upcoming.map(upcomingCard).join('')}</div></div></section>`;
 }
 

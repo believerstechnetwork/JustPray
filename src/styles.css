@@ -1509,11 +1509,17 @@ td.acts .btn + .btn {
 }
 
 /* ---------- other BTN events: home-page list ---------- */
+/* Sits between the next gathering (120px below it) and the burden (40px above it). */
 .upcoming {
-  padding: 120px 0 0;
+  padding: 0 0 80px;
+  scroll-margin-top: 24px;
 }
 .upcoming .sec-h {
   font-size: clamp(32px, 3.4vw, 44px);
+  text-wrap: balance;
+}
+.upcoming .sec-h:focus {
+  outline: none;
 }
 .up-h p {
   color: var(--ink-2);
@@ -1524,7 +1530,7 @@ td.acts .btn + .btn {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 28px;
-  margin-top: 44px;
+  margin-top: 40px;
 }
 .up-card {
   background: var(--card);
@@ -1535,31 +1541,112 @@ td.acts .btn + .btn {
   grid-template-rows: auto 1fr;
 }
 .up-list.one .up-card {
-  grid-template-columns: 1.1fr 1fr;
+  grid-template-columns: minmax(280px, 5fr) 7fr;
   grid-template-rows: none;
 }
+
+/* The left (or top) face: a picture, or the date drawn large on the cloth. */
+.up-face {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  display: grid;
+  place-items: center;
+  margin: 0;
+}
+.up-list.one .up-face {
+  aspect-ratio: auto;
+  min-height: 300px;
+}
+/* A soft pool of shade behind the date, so the numerals sit clear of the motifs. */
+.up-face.cloth::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: radial-gradient(closest-side, rgb(10 25 70 / 85%), rgb(10 25 70 / 0%));
+  pointer-events: none;
+}
+.up-face.cloth .up-date {
+  z-index: 1;
+}
 .up-img {
-  aspect-ratio: 16 / 9;
   background: var(--mute-t);
 }
-.up-list.one .up-img {
-  aspect-ratio: auto;
-  min-height: 320px;
-}
 .up-img img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
+.up-date {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+.up-date .m {
+  font: 700 14px var(--body);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+.up-date .d {
+  font: 400 clamp(76px, 8vw, 112px) / 0.9 var(--display);
+  letter-spacing: -0.04em;
+  color: #fff;
+  margin: 10px 0 8px;
+  white-space: nowrap;
+}
+.up-date .y {
+  font: 500 16px var(--body);
+  letter-spacing: 0.08em;
+  color: var(--on-2);
+}
+.up-face.cloth .up-date::after {
+  content: '';
+  width: 36px;
+  height: 2px;
+  margin-top: 18px;
+  border-radius: 2px;
+  background: var(--gold);
+  order: 3;
+}
+/* On a picture the date becomes a small white tag in the corner. */
+.up-img .up-date {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  padding: 10px 14px 9px;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgb(8 17 40 / 22%);
+}
+/* The tag stays white in dark mode too, so its text keeps the light-theme colours. */
+.up-img .up-date .m {
+  color: #0a6fc2;
+  font-size: 12px;
+}
+.up-img .up-date .d {
+  font-size: 34px;
+  color: #0d1a3a;
+  margin: 2px 0 0;
+}
+.up-img .up-date .y {
+  display: none;
+}
+
 .up-body {
-  padding: 26px 28px 30px;
+  padding: 28px 28px 30px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 10px;
 }
 .up-list.one .up-body {
-  padding: 40px 44px;
+  padding: 44px 48px;
   justify-content: center;
 }
 .up-when {
@@ -1575,7 +1662,8 @@ td.acts .btn + .btn {
 }
 .up-card h3 {
   font-size: 30px;
-  line-height: 1.1;
+  line-height: 1.08;
+  text-wrap: balance;
 }
 .up-list.one .up-card h3 {
   font-size: clamp(32px, 3.4vw, 44px);
@@ -1583,21 +1671,32 @@ td.acts .btn + .btn {
 .up-card p {
   color: var(--ink-2);
 }
+.up-card .up-sum {
+  max-width: 52ch;
+}
 .up-card .up-theme {
   font: 400 19px/1.35 var(--display);
   color: var(--ink);
 }
 .up-card .up-theme.tba {
-  font: 600 14px var(--body);
-  letter-spacing: 0.04em;
+  font: 600 13px var(--body);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--ink-2);
 }
 .up-where {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 600;
   font-size: 15px;
 }
+.up-where svg {
+  color: var(--ink-2);
+  flex: none;
+}
 .up-card .btn {
-  margin-top: 10px;
+  margin-top: 12px;
 }
 
 /* ---------- the celebration burst ---------- */
@@ -1979,12 +2078,21 @@ html[data-mode='dark'] .pill.on {
   background: var(--canvas);
 }
 .ann-frame.laptop .up-preview .up-card {
-  grid-template-columns: 1.1fr 1fr;
+  grid-template-columns: 4fr 7fr;
   grid-template-rows: none;
 }
-.ann-frame.laptop .up-preview .up-img {
+.ann-frame .up-preview .up-card h3 {
+  font-size: 26px;
+}
+.ann-frame.laptop .up-preview .up-face {
   aspect-ratio: auto;
   min-height: 260px;
+}
+.ann-frame .up-preview .up-date .d {
+  font-size: 72px;
+}
+.ann-frame .up-preview .up-img .up-date .d {
+  font-size: 30px;
 }
 
 /* ---------- share dialog ---------- */
@@ -2142,15 +2250,15 @@ html[data-mode='dark'] .share .x {
   .up-list.one .up-card {
     grid-template-columns: 1fr;
   }
-  .up-list.one .up-img {
+  .up-list.one .up-face {
     min-height: 0;
-    aspect-ratio: 16 / 9;
+    aspect-ratio: 16 / 10;
   }
   .up-list.one .up-body {
-    padding: 26px 24px 28px;
+    padding: 26px 24px 30px;
   }
   .upcoming {
-    padding-top: 80px;
+    padding-bottom: 56px;
   }
   .ann-row {
     grid-template-columns: 56px 1fr;

@@ -315,6 +315,22 @@ function applyRoute(): void {
   }
   render();
   window.scrollTo({ top: 0 });
+  if (jumpToEvents) {
+    jumpToEvents = false;
+    showEvents();
+  }
+}
+
+/** Set by the header's "Events" link when it has to go to the home page first. */
+let jumpToEvents = false;
+
+/** Scroll to the other-events section and move focus there, for keyboard and screen-reader users. */
+function showEvents(): void {
+  const h = document.getElementById('events-h');
+  if (!h) return;
+  const smooth = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  h.closest('section')?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' });
+  h.focus({ preventScroll: true });
 }
 
 function setTheme(theme: Theme): void {
@@ -670,6 +686,14 @@ document.addEventListener('click', async (e) => {
     case 'menu':
       S.menu = !S.menu;
       return render();
+    case 'events':
+      if (S.page !== 'home') {
+        jumpToEvents = true;
+        return go('home');
+      }
+      S.menu = false;
+      render();
+      return showEvents();
     case 'theme':
       setTheme(S.theme === 'dark' ? 'light' : 'dark');
       return render();
