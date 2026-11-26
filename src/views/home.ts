@@ -2,6 +2,7 @@ import { IMG } from '../images';
 import { motif, pattern } from '../lib/cloth';
 import { dayOfMonth, displayTime, esc, monthYear, weekday } from '../lib/format';
 import { capacity, S, seatsLeft } from '../state';
+import { upcomingSection } from './announcements';
 import { btn, footer, ICON, nav, seatWall, when } from './common';
 
 /** Date block for the next gathering, or a placeholder while it loads. */
@@ -52,5 +53,5 @@ export function home(): string {
  <div class="tile"><figure class="pframe"><img src="${IMG.t3}" style="object-position:60% 50%" alt="Attendees in BTN shirts talking outside the venue" loading="lazy"></figure><h3>Go back to work</h3><p>We return to our jobs and homes more committed to praying through the month.</p></div>
 </div></div></section>
 <section class="cloth verse">${pattern(14, 6, 17, 0.22)}<div class="q"><blockquote>“And I sought for a man among them, that should make up the hedge, and stand in the gap before me for the land.”<cite>Ezekiel 22:30 (KJV)</cite></blockquote></div></section>
-<section class="close"><h2>Free to attend.</h2>${btn(`Reserve a seat ${ICON.arrow}`, 'register', 'gold')}</section>${footer()}`;
+${upcomingSection()}<section class="close"><h2>Free to attend.</h2>${btn(`Reserve a seat ${ICON.arrow}`, 'register', 'gold')}</section>${footer()}`;
 }

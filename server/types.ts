@@ -92,6 +92,41 @@ export interface NewContribution {
   amount: number;
 }
 
+/** Another BTN event (not a Just Pray gathering), announced by email and listed on the site. */
+export interface AnnouncementFields {
+  title: string;
+  /** YYYY-MM-DD */
+  date: string;
+  endDate: string | null;
+  /** "HH:MM" in Lagos, or null. */
+  time: string | null;
+  /** The event's theme, e.g. "Building with purpose"; null when there is none (yet). */
+  theme: string | null;
+  /** The theme is still to be announced. */
+  themeTba: boolean;
+  /** A place, or "Online". With `venueTba`, an optional city such as "Lagos". */
+  venue: string;
+  /** The venue is still to be announced. */
+  venueTba: boolean;
+  summary: string;
+  imageUrl: string | null;
+  linkUrl: string | null;
+  linkLabel: string | null;
+  subject: string;
+  message: string;
+}
+
+export interface AnnouncementRecord extends AnnouncementFields {
+  id: number;
+  status: 'draft' | 'published';
+  publishedAt: string | null;
+  /** Emails delivered so far. */
+  sentCount: number;
+  /** People it was sent to when published. */
+  recipients: number;
+  createdAt: string;
+}
+
 /** Storage used by the API. `SupabaseDb` in production, `MemoryDb` in tests and local dev. */
 export interface Db {
   currentEvent(): Promise<EventDetails | null>;
@@ -125,6 +160,17 @@ export interface Db {
   markContributionSent(reference: string): Promise<ContributionRecord | null>;
   setContributionStatus(id: number, status: ContributionStatus): Promise<ContributionRecord | null>;
   listContributions(): Promise<ContributionRecord[]>;
+  /** Newest first. */
+  listAnnouncements(): Promise<AnnouncementRecord[]>;
+  createAnnouncement(fields: AnnouncementFields): Promise<AnnouncementRecord>;
+  updateAnnouncement(id: number, fields: AnnouncementFields): Promise<AnnouncementRecord | null>;
+  deleteDraftAnnouncement(id: number): Promise<boolean>;
+  /** Draft to published, once; null when unknown or already published. */
+  publishAnnouncement(id: number, recipients: number): Promise<AnnouncementRecord | null>;
+  /** Published events that have not ended by this Lagos date, soonest first. */
+  upcomingAnnouncements(todayIso: string, limit: number): Promise<AnnouncementRecord[]>;
+  /** People who asked to hear about future events and have not unsubscribed, one per email. */
+  updatesAudience(): Promise<{ name: string; email: string }[]>;
   ping(): Promise<void>;
 }
 

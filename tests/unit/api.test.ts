@@ -79,7 +79,12 @@ describe('public API', () => {
   it('returns the event, seat count and bank details', async () => {
     const { status, data } = await call('GET', '/api/public');
     expect(status).toBe(200);
-    expect(data).toEqual({ event: EVENT, reserved: 0, banks: { NGN: BANK, USD: USD_BANK } });
+    expect(data).toEqual({
+      event: EVENT,
+      reserved: 0,
+      banks: { NGN: BANK, USD: USD_BANK },
+      upcoming: [],
+    });
   });
 
   it('returns 503 when the database is not configured', async () => {

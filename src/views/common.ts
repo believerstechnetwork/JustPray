@@ -23,6 +23,9 @@ export const ICON = {
     '<rect x="3.5" y="8" width="17" height="12.5" rx="2"/><path d="M12 8v12.5M3.5 12.5h17M12 8C10.5 4 6.5 4 7 6.5S12 8 12 8zm0 0c1.5-4 5.5-4 5-1.5S12 8 12 8z"/>',
   ),
   back: svg('<path d="M19 12H5M11 6l-6 6 6 6"/>'),
+  megaphone: svg(
+    '<path d="M3.5 10.5v3a1 1 0 0 0 1 1H7l5.5 4.5v-14L7 9.5H4.5a1 1 0 0 0-1 1z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a7.5 7.5 0 0 1 0 11"/>',
+  ),
   out: svg('<path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10"/>'),
 };
 

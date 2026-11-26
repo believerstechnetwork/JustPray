@@ -1,9 +1,12 @@
 import type {
   AdminData,
+  Announcement,
+  AnnouncementForm,
   BankDetails,
   Banks,
   CancelInfo,
   Currency,
+  UpcomingEvent,
   GatheringEvent,
   Reservation,
 } from './data/types';
@@ -17,7 +20,7 @@ export const ROUTES: readonly Route[] = [
   'admin',
   'cancel',
 ];
-export type AdminTab = 'overview' | 'attendees' | 'contributions' | 'events';
+export type AdminTab = 'overview' | 'attendees' | 'contributions' | 'events' | 'announcements';
 /** Support flow: choose an amount, see the bank details, then the thank-you note. */
 export type SupportStep = 'choose' | 'details' | 'sent';
 export type Theme = 'light' | 'dark';
@@ -55,6 +58,21 @@ export interface UiState {
   admin: AdminData | null;
   adminError: string;
   adminNotice: string;
+  /** Other BTN events listed on the site. */
+  upcoming: UpcomingEvent[];
+  /** Organiser announcements: the list, who they go to, and the one being edited. */
+  ann: {
+    list: Announcement[] | null;
+    audience: number;
+    /** 'new', an announcement id, or null for the list. */
+    editing: 'new' | number | null;
+    form: AnnouncementForm;
+    view: 'email' | 'site';
+    device: 'laptop' | 'phone';
+    confirming: boolean;
+    notice: string;
+    error: string;
+  };
   /** The "Cancel my seat" page, opened from the private link in an email. */
   cancel: {
     token: string;
@@ -94,7 +112,38 @@ export const S: UiState = {
   adminError: '',
   adminNotice: '',
   cancel: { token: '', load: 'loading', info: null, error: '', justCancelled: false },
+  upcoming: [],
+  ann: {
+    list: null,
+    audience: 0,
+    editing: null,
+    form: blankAnnouncement(),
+    view: 'email',
+    device: 'laptop',
+    confirming: false,
+    notice: '',
+    error: '',
+  },
 };
+
+export function blankAnnouncement(): AnnouncementForm {
+  return {
+    title: '',
+    date: '',
+    endDate: null,
+    time: null,
+    theme: null,
+    themeTba: false,
+    venue: '',
+    venueTba: false,
+    summary: '',
+    imageUrl: null,
+    linkUrl: null,
+    linkLabel: 'Register',
+    subject: '',
+    message: 'Hi {first name},\n\n',
+  };
+}
 
 /** Preset contribution amounts per currency; the middle one is the default. */
 export const PRESETS: Record<Currency, number[]> = {

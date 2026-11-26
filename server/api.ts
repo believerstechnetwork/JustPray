@@ -17,6 +17,8 @@ import {
   type BankDetails,
   type Banks,
   type ContributionRecord,
+  type AnnouncementFields,
+  type AnnouncementRecord,
   type ContributionStatus,
   type Db,
   type EventDetails,
@@ -163,6 +165,85 @@ function validEvent(body: unknown, reserved: number): EventDetails {
   return event;
 }
 
+/** A public https link (or this computer, during local development). */
+const httpsUrl = (v: string): boolean => {
+  try {
+    const u = new URL(v);
+    return u.protocol === 'https:' || (u.protocol === 'http:' && u.hostname === 'localhost');
+  } catch {
+    return false;
+  }
+};
+
+/** Check an announcement from the organiser form; throws a 400 with a message to show. */
+export function validAnnouncement(body: unknown): AnnouncementFields {
+  const str = (k: string): string => {
+    const v = field(body, k);
+    return typeof v === 'string' ? v.trim() : '';
+  };
+  const orNull = (v: string): string | null => v || null;
+  const f: AnnouncementFields = {
+    title: str('title'),
+    date: str('date'),
+    endDate: orNull(str('endDate')),
+    time: str('time') ? parseTime(str('time')) : null,
+    theme: orNull(str('theme')),
+    themeTba: field(body, 'themeTba') === true,
+    venue: str('venue'),
+    venueTba: field(body, 'venueTba') === true,
+    summary: str('summary'),
+    imageUrl: orNull(str('imageUrl')),
+    linkUrl: orNull(str('linkUrl')),
+    linkLabel: orNull(str('linkLabel')),
+    subject: str('subject'),
+    message: str('message'),
+  };
+  const isDate = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d));
+  if (!f.title || !f.summary || !f.subject || !f.message)
+    throw new HttpError(400, 'Fill in the title, summary, subject and message.');
+  if (!f.venue && !f.venueTba)
+    throw new HttpError(400, 'Fill in the venue, or tick “Venue to be announced”.');
+  if (f.themeTba) f.theme = null;
+  if (!isDate(f.date)) throw new HttpError(400, 'Enter the event date.');
+  if (f.endDate && (!isDate(f.endDate) || f.endDate < f.date))
+    throw new HttpError(400, 'The end date must be on or after the start date.');
+  if (str('time') && !f.time) throw new HttpError(400, 'Enter the start time with the picker.');
+  if (f.imageUrl && !httpsUrl(f.imageUrl))
+    throw new HttpError(400, 'The picture link must start with https://');
+  if (f.linkUrl && !httpsUrl(f.linkUrl))
+    throw new HttpError(400, 'The button link must start with https://');
+  type TextField = 'title' | 'theme' | 'venue' | 'summary' | 'linkLabel' | 'subject' | 'message';
+  const limits: [TextField, number][] = [
+    ['title', 120],
+    ['theme', 160],
+    ['venue', 200],
+    ['summary', 280],
+    ['linkLabel', 40],
+    ['subject', 150],
+    ['message', 5000],
+  ];
+  for (const [k, max] of limits)
+    if ((f[k] ?? '').length > max) throw new HttpError(400, `The ${k} is too long.`);
+  return f;
+}
+
+/** What the public site shows of an announcement. */
+const publicAnnouncement = (a: AnnouncementRecord) => ({
+  id: a.id,
+  title: a.title,
+  date: a.date,
+  endDate: a.endDate,
+  time: a.time,
+  theme: a.theme,
+  themeTba: a.themeTba,
+  venue: a.venue,
+  venueTba: a.venueTba,
+  summary: a.summary,
+  imageUrl: a.imageUrl,
+  linkUrl: a.linkUrl,
+  linkLabel: a.linkLabel,
+});
+
 const publicReservation = (r: ReservationRecord) => ({
   seat: r.seat,
   code: r.code,
@@ -281,8 +362,17 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
   try {
     // Public ------------------------------------------------------------------
     if (path === '/api/public' && method === 'GET') {
-      const [event, reserved] = await Promise.all([db().currentEvent(), db().reservedCount()]);
-      return json(200, { event, reserved, banks: deps.banks });
+      const [event, reserved, upcoming] = await Promise.all([
+        db().currentEvent(),
+        db().reservedCount(),
+        db().upcomingAnnouncements(lagosDay(new Date()), 3),
+      ]);
+      return json(200, {
+        event,
+        reserved,
+        banks: deps.banks,
+        upcoming: upcoming.map(publicAnnouncement),
+      });
     }
 
     if (path === '/api/reserve' && method === 'POST') {
@@ -491,6 +581,44 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
       if (!saved.ok)
         return fail(400, `Capacity cannot be below the ${saved.reserved} seats already reserved.`);
       return json(200, { event: saved.event });
+    }
+
+    if (path === '/api/admin/announcements' && method === 'GET') {
+      requireAdmin();
+      const [announcements, audience] = await Promise.all([
+        db().listAnnouncements(),
+        db().updatesAudience(),
+      ]);
+      return json(200, { announcements, audience: audience.length });
+    }
+
+    if (path === '/api/admin/announcements' && method === 'POST') {
+      requireAdmin();
+      const created = await db().createAnnouncement(validAnnouncement(await readJson(req)));
+      return json(201, { announcement: created });
+    }
+
+    const annMatch = /^\/api\/admin\/announcements\/(\d+)(\/publish)?$/.exec(path);
+    if (annMatch) {
+      requireAdmin();
+      const id = Number(annMatch[1]);
+      if (!annMatch[2] && method === 'PUT') {
+        const saved = await db().updateAnnouncement(id, validAnnouncement(await readJson(req)));
+        if (!saved) return fail(404, 'Announcement not found.');
+        return json(200, { announcement: saved });
+      }
+      if (!annMatch[2] && method === 'DELETE') {
+        if (!(await db().deleteDraftAnnouncement(id)))
+          return fail(400, 'Only a draft can be deleted.');
+        return json(200, { ok: true });
+      }
+      if (annMatch[2] && method === 'POST') {
+        const audience = await db().updatesAudience();
+        const published = await db().publishAnnouncement(id, audience.length);
+        if (!published) return fail(400, 'This announcement is already published.');
+        // Sending is queued and paced by the outbox (next step of this work).
+        return json(200, { announcement: published });
+      }
     }
 
     const statusMatch = /^\/api\/admin\/contributions\/(\d+)$/.exec(path);
