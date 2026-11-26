@@ -13,9 +13,9 @@ TypeScript) and a Supabase Postgres database. Confirmation emails go out through
    before merging that update: the changes are written so the live site keeps working meanwhile.
    Best run when no announcement is sending (none shows "Sending" in the admin Announcements list)
    and nobody is publishing. The update locks the sender's tables first, so a send that starts
-   meanwhile just waits for it. If an email is being sent at that moment, the update stops
-   without changing anything and asks you to wait two minutes and run it again; do the same if
-   Supabase reports a deadlock. Nothing is ever sent twice.
+   meanwhile just waits for it. If an email is being sent at that moment, or the tables are busy,
+   the update stops without changing anything and asks you to wait two minutes and run it again;
+   do the same if Supabase reports a deadlock. Nothing is ever sent twice.
 2. **Settings.** In Netlify, open Site configuration, then Environment variables, and add the
    variables listed in `.env.example`. Mark the keys and passwords as secret.
 3. **Deploy.** Push to `main`. The site, the API (`/api/*`) and a daily keep-alive job (so Supabase's

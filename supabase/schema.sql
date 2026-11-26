@@ -1,45 +1,67 @@
 -- Just Pray database. Run once in Supabase: SQL Editor -> New query -> paste -> Run.
 -- Safe to run again: it only creates what is missing.
 -- Best run when no announcement is sending (none shows "Sending" in the admin list) and nobody is
--- publishing. To keep it safe even while the sender runs, the script first takes both announcement
--- tables at once (below), in the order a send uses them, so a send simply waits for the update to
--- finish. If an email is being sent at that moment, it stops and changes nothing: wait two
--- minutes and run it again. Do the same if PostgreSQL stops it with a deadlock. Nothing is ever
--- sent twice.
+-- publishing. To keep it safe even while the sender runs, the script first takes the announcement
+-- tables (below), so a send or an import that comes along simply waits for the update to finish.
+-- If an email is being sent at that moment, or the tables are busy, it stops and changes nothing:
+-- wait two minutes and run it again. Do the same if PostgreSQL stops it with a deadlock. Nothing
+-- is ever sent twice.
 --
 -- Only the server (Netlify Functions, using the secret key) can read or write these tables.
 -- Row Level Security is on and there are no policies, so the public API keys get nothing.
 
--- On a database that already has the announcement tables, lock both before changing anything, in
--- the order send rows and then announcements, the same order a send takes them in. A send that
--- comes along meanwhile then waits at its first step instead of holding one table while this
--- script waits for it. (A fresh install has nothing to lock.)
--- If an email is being sent at that moment, the script stops at once and changes nothing: the
--- send's next step would otherwise wait for this script, and a send stopped while waiting would be
--- closed as failed even if the email went out. The SQL Editor runs the whole script as one
--- transaction, so stopping here also releases the locks straight away.
+-- On a database that already has the announcement tables, lock them all before changing
+-- anything. A send, publish, unsubscribe or import that comes along meanwhile then waits at its
+-- first step instead of holding one table while this script waits for it. (A fresh install has
+-- nothing to lock.) The SQL Editor runs the whole script as one transaction, so the locks last
+-- until it ends, and stopping with an error below lets them go straight away.
 do $$
 declare
+  tables text;
   in_flight boolean := false;
+  locked boolean := false;
 begin
-  if to_regclass('public.announcement_sends') is not null
-     and to_regclass('public.announcements') is not null then
-    lock table public.announcement_sends, public.announcements in access exclusive mode;
-    -- A run lasts under a minute, so a claim from the last two minutes belongs to a live run.
-    -- (Older versions of the table have no claimed_at, and no claims either.)
-    if exists (select 1 from information_schema.columns
-               where table_schema = 'public' and table_name = 'announcement_sends'
-                 and column_name = 'claimed_at') then
-      execute $q$
-        select exists (select 1 from public.announcement_sends
-                       where status in ('claimed', 'sending')
-                         and claimed_at > now() - interval '2 minutes')
-      $q$ into in_flight;
-    end if;
-    if in_flight then
-      raise exception 'An announcement email is being sent right now, so nothing was changed.'
-        using hint = 'Wait two minutes, then run this script again.';
-    end if;
+  tables := concat_ws(', ',
+    case when to_regclass('public.announcement_sends') is not null then 'public.announcement_sends' end,
+    case when to_regclass('public.announcements') is not null then 'public.announcements' end,
+    case when to_regclass('public.contacts') is not null then 'public.contacts' end,
+    case when to_regclass('public.unsubscribes') is not null then 'public.unsubscribes' end);
+  if tables = '' then
+    return;
+  end if;
+  -- A lock statement takes its tables one after the other, so a plain one could hold the first
+  -- while it waits for the next, and a send finishing meanwhile would wait behind it. With nowait,
+  -- a try that cannot take them all at once takes none (the failed try's locks are let go with
+  -- it), and the script tries again shortly, for about five seconds, holding nothing in between.
+  for attempt in 1 .. 50 loop
+    begin
+      execute format('lock table %s in access exclusive mode nowait', tables);
+      locked := true;
+      exit;
+    exception when lock_not_available then
+      perform pg_sleep(0.1);
+    end;
+  end loop;
+  if not locked then
+    raise exception 'The announcement tables are busy right now, so nothing was changed.'
+      using hint = 'Wait two minutes, then run this script again.';
+  end if;
+  -- If an email is being sent, stop: the send's next step would wait for this script, and a send
+  -- stopped while waiting would be closed as failed even if the email went out. A run lasts under
+  -- a minute, so a claim from the last two minutes belongs to a live run. (Older versions of the
+  -- table have no claimed_at, and no claims either.)
+  if exists (select 1 from information_schema.columns
+             where table_schema = 'public' and table_name = 'announcement_sends'
+               and column_name = 'claimed_at') then
+    execute $q$
+      select exists (select 1 from public.announcement_sends
+                     where status in ('claimed', 'sending')
+                       and claimed_at > now() - interval '2 minutes')
+    $q$ into in_flight;
+  end if;
+  if in_flight then
+    raise exception 'An announcement email is being sent right now, so nothing was changed.'
+      using hint = 'Wait two minutes, then run this script again.';
   end if;
 end;
 $$;
