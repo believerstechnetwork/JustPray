@@ -3,7 +3,7 @@ import doneB from './assets/images/doneB.jpg';
 import head1 from './assets/images/head1.jpg';
 import head2 from './assets/images/head2.jpg';
 import hero from './assets/images/hero.jpg';
-import logo from './assets/images/logo.png';
+import logo from './assets/brand/btn-logo-ondark.png';
 import s1 from './assets/images/s1.jpg';
 import s2 from './assets/images/s2.jpg';
 import s3 from './assets/images/s3.jpg';

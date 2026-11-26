@@ -1,0 +1,763 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-26T01:19:04+00:00",
+  "title": "Design System: Just Pray",
+  "extensions": {
+    "colorMeta": {
+      "indigo": {
+        "role": "primary",
+        "displayName": "Adire Indigo",
+        "canonical": "#0e2766",
+        "tonalRamp": [
+          "#020922",
+          "#11224b",
+          "#253f78",
+          "#3f5ea2",
+          "#5f80c7",
+          "#84a4e6",
+          "#afc9fd",
+          "#dcefff"
+        ]
+      },
+      "indigo-raised": {
+        "role": "primary",
+        "displayName": "Raised Indigo",
+        "canonical": "#16378c",
+        "tonalRamp": [
+          "#010728",
+          "#0b2055",
+          "#1d3c86",
+          "#355bb3",
+          "#557ed9",
+          "#7ba3f7",
+          "#a8c9ff",
+          "#d7efff"
+        ]
+      },
+      "btn-blue": {
+        "role": "primary",
+        "displayName": "BTN Blue",
+        "canonical": "#0a6fc2",
+        "tonalRamp": [
+          "#000928",
+          "#002455",
+          "#004186",
+          "#0062b4",
+          "#2c85da",
+          "#5fa9f7",
+          "#96ceff",
+          "#cbf3ff"
+        ]
+      },
+      "seat-gold": {
+        "role": "secondary",
+        "displayName": "Seat Gold",
+        "canonical": "#f5b841",
+        "tonalRamp": [
+          "#190500",
+          "#3d1c00",
+          "#653500",
+          "#8b5400",
+          "#af7600",
+          "#cf9b34",
+          "#ebc27c",
+          "#ffeaba"
+        ]
+      },
+      "gold-ink": {
+        "role": "secondary",
+        "displayName": "Gold Ink",
+        "canonical": "#3a2600",
+        "tonalRamp": [
+          "#110901",
+          "#30230c",
+          "#513f20",
+          "#745d39",
+          "#967e59",
+          "#b7a280",
+          "#d8c7ac",
+          "#f9edda"
+        ]
+      },
+      "gold-tint": {
+        "role": "secondary",
+        "displayName": "Gold Tint",
+        "canonical": "#fff4d6",
+        "tonalRamp": [
+          "#0e0b03",
+          "#2a2515",
+          "#49412b",
+          "#6a6147",
+          "#8c8267",
+          "#aea58c",
+          "#d0c9b5",
+          "#f3eee0"
+        ]
+      },
+      "gold-line": {
+        "role": "secondary",
+        "displayName": "Gold Line",
+        "canonical": "#ebcb7e",
+        "tonalRamp": [
+          "#140900",
+          "#332200",
+          "#563e00",
+          "#7a5d00",
+          "#9c7e30",
+          "#bda260",
+          "#dcc795",
+          "#fcedca"
+        ]
+      },
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Tinted Canvas",
+        "canonical": "#f4f8fd",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#232528",
+          "#3f4246",
+          "#5e6266",
+          "#7f8387",
+          "#a2a5a9",
+          "#c7c9cd",
+          "#edeff1"
+        ]
+      },
+      "card": {
+        "role": "neutral",
+        "displayName": "Card White",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Deep Ink",
+        "canonical": "#0d1a3a",
+        "tonalRamp": [
+          "#060b18",
+          "#1a243a",
+          "#334161",
+          "#4f6186",
+          "#6f82aa",
+          "#94a5ca",
+          "#bbc9e7",
+          "#e5efff"
+        ]
+      },
+      "ink-soft": {
+        "role": "neutral",
+        "displayName": "Soft Ink",
+        "canonical": "#4a5a7a",
+        "tonalRamp": [
+          "#060b16",
+          "#1b2538",
+          "#34425d",
+          "#516182",
+          "#7182a5",
+          "#95a5c5",
+          "#bdcae3",
+          "#e5efff"
+        ]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Rule",
+        "canonical": "#dce5f2",
+        "tonalRamp": [
+          "#090b0f",
+          "#21252c",
+          "#3c424c",
+          "#5a626d",
+          "#7b838f",
+          "#9ea6b1",
+          "#c4cad2",
+          "#eaeff5"
+        ]
+      },
+      "field-line": {
+        "role": "neutral",
+        "displayName": "Field Line",
+        "canonical": "#c9d6e8",
+        "tonalRamp": [
+          "#080b11",
+          "#1f262f",
+          "#394350",
+          "#576272",
+          "#778394",
+          "#9ba6b5",
+          "#c1cad6",
+          "#e9eff8"
+        ]
+      },
+      "mute-tint": {
+        "role": "neutral",
+        "displayName": "Mute Tint",
+        "canonical": "#eef2f8",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#232528",
+          "#3f4246",
+          "#5e6166",
+          "#7f8388",
+          "#a2a5aa",
+          "#c7c9cd",
+          "#edeff1"
+        ]
+      },
+      "on-cloth": {
+        "role": "neutral",
+        "displayName": "On Cloth",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "on-cloth-soft": {
+        "role": "neutral",
+        "displayName": "Cloth Mist",
+        "canonical": "#c5d6f2",
+        "tonalRamp": [
+          "#070b14",
+          "#1d2533",
+          "#364257",
+          "#53627a",
+          "#74839d",
+          "#98a6be",
+          "#becadd",
+          "#e7effd"
+        ]
+      },
+      "ok": {
+        "role": "neutral",
+        "displayName": "Confirmed Green",
+        "canonical": "#1e7f52",
+        "tonalRamp": [
+          "#001103",
+          "#002f16",
+          "#00512c",
+          "#087448",
+          "#3b9668",
+          "#6bb88d",
+          "#9fd9b6",
+          "#d2fae1"
+        ]
+      },
+      "warn": {
+        "role": "neutral",
+        "displayName": "Awaiting Amber",
+        "canonical": "#8a5a00",
+        "tonalRamp": [
+          "#170600",
+          "#3a1d00",
+          "#603800",
+          "#855600",
+          "#a9772e",
+          "#ca9c5e",
+          "#e7c294",
+          "#ffeaca"
+        ]
+      },
+      "bad": {
+        "role": "neutral",
+        "displayName": "Error Red",
+        "canonical": "#b3261e",
+        "tonalRamp": [
+          "#250000",
+          "#510000",
+          "#820000",
+          "#b0221b",
+          "#d84c3f",
+          "#f8796a",
+          "#ffaa9c",
+          "#ffdacf"
+        ]
+      },
+      "canvas-dark": {
+        "role": "neutral",
+        "displayName": "Tinted Canvas (dark)",
+        "canonical": "#081128",
+        "tonalRamp": [
+          "#070b15",
+          "#1d2535",
+          "#37425a",
+          "#54617e",
+          "#7482a0",
+          "#98a5c1",
+          "#bfc9e0",
+          "#e7efff"
+        ]
+      },
+      "card-dark": {
+        "role": "neutral",
+        "displayName": "Card White (dark)",
+        "canonical": "#0f1e44",
+        "tonalRamp": [
+          "#050a1a",
+          "#19243e",
+          "#314165",
+          "#4c608c",
+          "#6d82b0",
+          "#91a5cf",
+          "#b9c9eb",
+          "#e3efff"
+        ]
+      },
+      "ink-dark": {
+        "role": "neutral",
+        "displayName": "Deep Ink (dark)",
+        "canonical": "#edf2fb",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#23252a",
+          "#3f4248",
+          "#5d6169",
+          "#7e828a",
+          "#a1a5ad",
+          "#c6c9cf",
+          "#eceef3"
+        ]
+      },
+      "ink-soft-dark": {
+        "role": "neutral",
+        "displayName": "Soft Ink (dark)",
+        "canonical": "#a8b8d6",
+        "tonalRamp": [
+          "#070b14",
+          "#1d2535",
+          "#364258",
+          "#53617c",
+          "#74839f",
+          "#98a6c0",
+          "#becade",
+          "#e7effe"
+        ]
+      },
+      "rule-dark": {
+        "role": "neutral",
+        "displayName": "Rule (dark)",
+        "canonical": "#1f3263",
+        "tonalRamp": [
+          "#040a1d",
+          "#172343",
+          "#2e406c",
+          "#495f94",
+          "#6981b9",
+          "#8da4d8",
+          "#b6c9f2",
+          "#e1efff"
+        ]
+      },
+      "field-line-dark": {
+        "role": "neutral",
+        "displayName": "Field Line (dark)",
+        "canonical": "#2f4479",
+        "tonalRamp": [
+          "#040a1e",
+          "#162344",
+          "#2d406e",
+          "#485f96",
+          "#6881bb",
+          "#8da4da",
+          "#b6c9f4",
+          "#e1efff"
+        ]
+      },
+      "mute-tint-dark": {
+        "role": "neutral",
+        "displayName": "Mute Tint (dark)",
+        "canonical": "#17284f",
+        "tonalRamp": [
+          "#050a1a",
+          "#18243e",
+          "#304166",
+          "#4c608c",
+          "#6c82b0",
+          "#90a5d0",
+          "#b9c9eb",
+          "#e3efff"
+        ]
+      },
+      "btn-blue-dark": {
+        "role": "primary",
+        "displayName": "Sky Signal",
+        "canonical": "#7ab9f5",
+        "tonalRamp": [
+          "#000b1f",
+          "#002647",
+          "#094472",
+          "#26659b",
+          "#4987c0",
+          "#74aadf",
+          "#a4cef8",
+          "#d4f2ff"
+        ]
+      },
+      "cloth-dark": {
+        "role": "primary",
+        "displayName": "Night Cloth",
+        "canonical": "#12307a",
+        "tonalRamp": [
+          "#010825",
+          "#0d2150",
+          "#213d7f",
+          "#3a5dab",
+          "#597fd1",
+          "#7fa4ee",
+          "#acc9ff",
+          "#d9efff"
+        ]
+      },
+      "gold-tint-dark": {
+        "role": "secondary",
+        "displayName": "Gold Tint (dark)",
+        "canonical": "#3a2c0c",
+        "tonalRamp": [
+          "#100a02",
+          "#2d2410",
+          "#4d4025",
+          "#6f5f3f",
+          "#90805f",
+          "#b2a385",
+          "#d4c8b0",
+          "#f6eedd"
+        ]
+      },
+      "gold-line-dark": {
+        "role": "secondary",
+        "displayName": "Gold Line (dark)",
+        "canonical": "#7a5e1c",
+        "tonalRamp": [
+          "#130900",
+          "#322200",
+          "#553e00",
+          "#785d1a",
+          "#9b7e3f",
+          "#bca16a",
+          "#dcc79d",
+          "#fcedcf"
+        ]
+      },
+      "ok-dark": {
+        "role": "neutral",
+        "displayName": "Confirmed Green (dark)",
+        "canonical": "#5fd39c",
+        "tonalRamp": [
+          "#001203",
+          "#003115",
+          "#00542b",
+          "#007746",
+          "#119a67",
+          "#58bc8c",
+          "#94dcb5",
+          "#cbfce0"
+        ]
+      },
+      "warn-dark": {
+        "role": "neutral",
+        "displayName": "Awaiting Amber (dark)",
+        "canonical": "#f5c25a",
+        "tonalRamp": [
+          "#170700",
+          "#3a1e00",
+          "#603900",
+          "#855700",
+          "#a97900",
+          "#c99e43",
+          "#e6c484",
+          "#ffebbf"
+        ]
+      },
+      "bad-dark": {
+        "role": "neutral",
+        "displayName": "Error Red (dark)",
+        "canonical": "#ff8a80",
+        "tonalRamp": [
+          "#210000",
+          "#4a0608",
+          "#771b1a",
+          "#a33733",
+          "#ca5b53",
+          "#ea847a",
+          "#ffb1a8",
+          "#ffded7"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "First-viewport headline on a cloth hero; 48px on phones."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Large home section heads."
+      },
+      "section": {
+        "displayName": "Section",
+        "purpose": "Standard section heads."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Panel, card, tile and organiser block heads (23-30px)."
+      },
+      "lead": {
+        "displayName": "Lead",
+        "purpose": "One framing sentence under a head."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Running text, 42-58ch; 16px on phones."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Uppercase field labels, key-value terms, table heads, pass field names."
+      },
+      "numeral": {
+        "displayName": "Numeral",
+        "purpose": "Seat counts, big date, seat number and codes, tabular figures."
+      }
+    },
+    "shadows": [
+      {
+        "name": "card-lift",
+        "value": "0 1px 2px rgb(14 39 102 / 6%), 0 24px 48px -24px rgb(14 39 102 / 28%)",
+        "purpose": "Cards, slip, tiles, seat cloth, photo crops on canvas (light)."
+      },
+      {
+        "name": "card-lift-dark",
+        "value": "0 1px 2px rgb(0 0 0 / 30%), 0 24px 48px -24px rgb(0 0 0 / 60%)",
+        "purpose": "Card lift in dark mode."
+      },
+      {
+        "name": "tag-float",
+        "value": "0 18px 36px -18px rgb(0 0 0 / 55%)",
+        "purpose": "White tags over photos."
+      },
+      {
+        "name": "gold-glow",
+        "value": "0 10px 24px -12px rgb(245 184 65 / 80%)",
+        "purpose": "Gold Reserve button only."
+      },
+      {
+        "name": "seat-glow",
+        "value": "0 0 12px rgb(245 184 65 / 45%)",
+        "purpose": "A lit seat."
+      },
+      {
+        "name": "pass-drop",
+        "value": "drop-shadow(0 34px 40px rgb(0 0 0 / 45%))",
+        "purpose": "The pass, so the torn edge casts a shadow."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease",
+        "value": "cubic-bezier(0.2, 0.8, 0.2, 1)",
+        "purpose": "Shared ease for every transition and arrival."
+      },
+      {
+        "name": "press",
+        "value": "transform 150ms; scale(0.97)",
+        "purpose": "Button press."
+      },
+      {
+        "name": "seat-light",
+        "value": "420ms, 14ms stagger per seat, once",
+        "purpose": "Reserved seats light in seat order on load."
+      },
+      {
+        "name": "pass-in",
+        "value": "500ms rise from 28px with -1deg, once",
+        "purpose": "Pass arrival."
+      },
+      {
+        "name": "pass-squares",
+        "value": "320ms each, 240ms + 45ms stagger, once",
+        "purpose": "Pass cloth squares draw in."
+      },
+      {
+        "name": "tag-drop",
+        "value": "420ms from -18px, 620ms delay, once",
+        "purpose": "Seat tag drops onto the pass."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "animation: none; transition: none",
+        "purpose": "All motion stops under prefers-reduced-motion: reduce."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "nav-collapse",
+        "value": "980px"
+      },
+      {
+        "name": "phone",
+        "value": "760px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Gold Reserve Button",
+      "kind": "button",
+      "refersTo": "button-gold",
+      "description": "The Reserve action only; the one gold action in a region.",
+      "html": "<button class=\"ds-btn-gold\">Reserve a seat <svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.9\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M5 12h14M13 6l6 6-6 6\"/></svg></button>",
+      "css": ".ds-btn-gold{display:inline-flex;align-items:center;gap:10px;min-height:52px;padding:0 24px;border:0;border-radius:14px;background:#f5b841;color:#3a2600;font-family:'Figtree',system-ui,sans-serif;font-weight:600;font-size:17px;box-shadow:0 10px 24px -12px rgb(245 184 65 / 80%);cursor:pointer;transition:transform .15s cubic-bezier(.2,.8,.2,1),background-color .15s}.ds-btn-gold:hover{background:#f7c35e}.ds-btn-gold:active{transform:scale(.97)}.ds-btn-gold:focus-visible{outline:3px solid #0a6fc2;outline-offset:3px}"
+    },
+    {
+      "name": "Indigo Button",
+      "kind": "button",
+      "refersTo": "button-indigo",
+      "description": "Primary non-Reserve action on a white panel; inverts to white in dark mode.",
+      "html": "<button class=\"ds-btn-ind\">Show bank details</button>",
+      "css": ".ds-btn-ind{min-height:52px;padding:0 24px;border:0;border-radius:14px;background:#0e2766;color:#fff;font-family:'Figtree',system-ui,sans-serif;font-weight:600;font-size:17px;cursor:pointer;transition:transform .15s cubic-bezier(.2,.8,.2,1),background-color .15s}.ds-btn-ind:hover{background:#16378c}.ds-btn-ind:active{transform:scale(.97)}.ds-btn-ind:focus-visible{outline:3px solid #0a6fc2;outline-offset:3px}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Secondary and reset actions.",
+      "html": "<button class=\"ds-btn-ghost\">Edit event</button>",
+      "css": ".ds-btn-ghost{min-height:44px;padding:0 16px;border:0;border-radius:11px;background:none;color:#0d1a3a;box-shadow:inset 0 0 0 1.5px #c9d6e8;font-family:'Figtree',system-ui,sans-serif;font-weight:600;font-size:15px;cursor:pointer}.ds-btn-ghost:hover{box-shadow:inset 0 0 0 1.5px #0a6fc2}.ds-btn-ghost:focus-visible{outline:3px solid #0a6fc2;outline-offset:3px}"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input-field",
+      "description": "Labelled 52px field with a blue focus halo.",
+      "html": "<div class=\"ds-field\"><label for=\"ds-e\">Email</label><input id=\"ds-e\" type=\"email\" placeholder=\"you@example.com\"></div>",
+      "css": ".ds-field label{display:block;font-family:'Figtree',system-ui,sans-serif;font-weight:600;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#4a5a7a;margin-bottom:7px}.ds-field input{width:100%;height:52px;border-radius:12px;border:1.5px solid #c9d6e8;background:#fff;padding:0 16px;font-size:17px;font-family:'Figtree',system-ui,sans-serif;color:#0d1a3a;transition:border-color .15s,box-shadow .15s}.ds-field input:focus{outline:none;border-color:#0a6fc2;box-shadow:0 0 0 4px rgb(10 111 194 / 18%)}"
+    },
+    {
+      "name": "Panel Card",
+      "kind": "card",
+      "refersTo": "card-panel",
+      "description": "White card on the tinted canvas, one soft blue lift.",
+      "html": "<div class=\"ds-panel\"><h3>Your details</h3><p>Fields marked * are required.</p></div>",
+      "css": ".ds-panel{background:#fff;border-radius:20px;padding:34px 34px 28px;box-shadow:0 1px 2px rgb(14 39 102 / 6%),0 24px 48px -24px rgb(14 39 102 / 28%);color:#0d1a3a}.ds-panel h3{font-family:'Young Serif',Georgia,serif;font-weight:400;font-size:30px;line-height:1.05;margin:0}.ds-panel p{font-family:'Figtree',system-ui,sans-serif;color:#4a5a7a;margin:8px 0 0}"
+    },
+    {
+      "name": "Cloth Nav",
+      "kind": "nav",
+      "refersTo": "cloth-field",
+      "description": "Top bar on indigo cloth: brand, links, one small gold Reserve.",
+      "html": "<header class=\"ds-nav\"><span class=\"ds-wm\">Just Pray</span><nav><a aria-current=\"page\">About</a><a>Next gathering</a><a>Support</a></nav><button class=\"ds-nav-btn\">Reserve a seat</button></header>",
+      "css": ".ds-nav{display:flex;align-items:center;gap:26px;height:76px;padding:0 24px;background:#0e2766;color:#fff;border-radius:14px}.ds-wm{font-family:'Young Serif',Georgia,serif;font-size:22px}.ds-nav nav{display:flex;gap:22px;margin-left:auto}.ds-nav a{font-family:'Figtree',system-ui,sans-serif;color:#c5d6f2;font-size:15px;cursor:pointer}.ds-nav a:hover,.ds-nav a[aria-current]{color:#fff}.ds-nav a[aria-current]{text-decoration:underline;text-underline-offset:9px;text-decoration-thickness:2px}.ds-nav-btn{min-height:44px;padding:0 16px;border:0;border-radius:11px;background:#f5b841;color:#3a2600;font-family:'Figtree',system-ui,sans-serif;font-weight:600;font-size:15px}"
+    },
+    {
+      "name": "Photo Tag",
+      "kind": "chip",
+      "refersTo": "photo-tag",
+      "description": "White stitched tag floating over a photo with the next date.",
+      "html": "<div class=\"ds-tag\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.9\" stroke-linecap=\"round\"><rect x=\"3.5\" y=\"5\" width=\"17\" height=\"15.5\" rx=\"2\"/><path d=\"M3.5 10h17M8 3v4M16 3v4\"/></svg><div><b>Sat 30 January</b><span>4:00 PM WAT · Lagos</span></div></div>",
+      "css": ".ds-tag{position:relative;display:inline-flex;align-items:center;gap:10px;padding:12px 16px;border-radius:14px;background:#fff;color:#0d1a3a;box-shadow:0 18px 36px -18px rgb(0 0 0 / 55%)}.ds-tag::after{content:'';position:absolute;inset:4px;border:1.5px dashed rgb(14 39 102 / 20%);border-radius:11px;pointer-events:none}.ds-tag svg{color:#0e2766}.ds-tag b{display:block;font-family:'Young Serif',Georgia,serif;font-weight:400;font-size:20px;line-height:1.15}.ds-tag span{font-family:'Figtree',system-ui,sans-serif;font-size:14px;color:#4a5a7a}"
+    },
+    {
+      "name": "Seat Cloth",
+      "kind": "custom",
+      "refersTo": "seat-light-lit",
+      "description": "One ring per seat; reserved seats light gold in order, once.",
+      "html": "<div class=\"ds-seats\"><i class=\"lit\" style=\"--i:0\"></i><i class=\"lit\" style=\"--i:1\"></i><i class=\"lit\" style=\"--i:2\"></i><i class=\"lit\" style=\"--i:3\"></i><i class=\"lit\" style=\"--i:4\"></i><i class=\"lit\" style=\"--i:5\"></i><i class=\"lit\" style=\"--i:6\"></i><i class=\"lit\" style=\"--i:7\"></i><i class=\"lit\" style=\"--i:8\"></i><i class=\"lit\" style=\"--i:9\"></i><i class=\"lit\" style=\"--i:10\"></i><i class=\"lit\" style=\"--i:11\"></i><i class=\"lit\" style=\"--i:12\"></i><i class=\"lit\" style=\"--i:13\"></i><i class=\"lit mine\" style=\"--i:14\"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>",
+      "css": ".ds-seats{display:grid;grid-template-columns:repeat(12,1fr);gap:16px 10px;justify-items:center;padding:28px;background:#0e2766;border-radius:22px}.ds-seats i{width:18px;height:18px;border-radius:50%;box-shadow:inset 0 0 0 1.5px rgb(255 255 255 / 50%)}.ds-seats i.lit{background:#f5b841;box-shadow:0 0 12px rgb(245 184 65 / 45%);animation:ds-light .42s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--i) * 14ms)}.ds-seats i.mine{outline:2px solid #f5b841;outline-offset:4px}@keyframes ds-light{from{opacity:0;transform:scale(.4)}}@media (prefers-reduced-motion:reduce){.ds-seats i{animation:none!important}}"
+    },
+    {
+      "name": "Pass Seat Tag",
+      "kind": "custom",
+      "refersTo": "pass-seat-tag",
+      "description": "The gold seat number on the pass, dropping in once.",
+      "html": "<div class=\"ds-pass-top\"><span class=\"ds-adm\">Admit one</span><span class=\"ds-seatno\"><small>SEAT</small>50</span></div>",
+      "css": ".ds-pass-top{position:relative;height:150px;background:#0e2766;border-radius:18px 18px 0 0;color:#fff}.ds-adm{position:absolute;left:20px;bottom:22px;font-family:'Figtree',system-ui,sans-serif;font-weight:600;font-size:12px;letter-spacing:.12em;text-transform:uppercase}.ds-seatno{position:absolute;right:20px;bottom:18px;background:#f5b841;color:#3a2600;border-radius:12px;padding:10px 16px 8px;text-align:center;font-family:'Young Serif',Georgia,serif;font-size:54px;line-height:1;box-shadow:0 12px 24px -10px rgb(0 0 0 / 50%);animation:ds-drop .42s cubic-bezier(.2,.8,.2,1) .62s both}.ds-seatno small{display:block;font-family:'Figtree',system-ui,sans-serif;font-weight:600;font-size:11px;letter-spacing:.12em;margin-bottom:4px}@keyframes ds-drop{from{opacity:0;transform:translateY(-18px)}}@media (prefers-reduced-motion:reduce){.ds-seatno{animation:none!important}}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Lit Seat on Adire Cloth",
+    "overview": "Just Pray is set on Adire eleko, the Yoruba indigo resist cloth, redrawn from the Believers Tech Network logo's own dots and lines: rings, dot grids, logo strands, combs, arcs and a leaf, faded white on deep indigo and joined by dotted seams. Gold is light: a lit seat, the action that lights one, and the few cues that show where you are. The world refuses both the cream-and-brown church page and the generic blue SaaS hero; it is a cloth people sit on, not a funnel.\n\nScreens are minimal and calm. Each screen shows just enough information to act, with one primary action per region. Nothing is repeated, nothing is decorative for its own sake, and nothing is invented: no filler claims, made-up numbers or promises. Beauty comes from the cloth, the type, space and the real event photos. Indigo cloth bands alternate with a pale tinted canvas carrying white cards; the organiser pages are the same world, quieter.\n\nBoth light and dark modes are first-class. In dark mode the canvas sinks to near-black indigo, cards lift to deep navy, and the cloth itself brightens slightly so it still reads as a field.",
+    "keyCharacteristics": [
+      "Indigo cloth fields built from six BTN-derived motifs, generated, deterministic, always aria-hidden.",
+      "Gold is light, never decoration: lit seats, the Reserve action, Free, the one lit word of a page headline, and interaction cues (focus, current page, selection).",
+      "Young Serif headlines at large scale against Figtree text; hierarchy by size, never by weight.",
+      "White cards on a tinted canvas, lifted by one soft blue shadow; stitched dashed borders on frames and tags.",
+      "The BTN logo only top left and in the footer, on cloth, never on a card.",
+      "The torn edge belongs to the pass alone. Motion plays once, then stops."
+    ],
+    "rules": [
+      {
+        "name": "The Lit Seat Rule",
+        "body": "Gold is light. It marks a lit seat, the action that lights one (Reserve), and Free; the one lit word in a page headline (\"pray.\", the visitor's name on the pass); and cues that show where you are or what has focus: the focus ring, text selection, the current page and active tab, a selected amount in dark mode, the seat progress bar and the busiest day in the reservations chart. It never fills a decorative heading, an icon tile, a label or a background. Test: if the gold element is not light (a seat, the Reserve action, Free, the lit word, or a \"you are here / this is selected\" cue), it should not be gold.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Light Rule",
+        "body": "One gold action per screen region. A region on indigo may carry a single gold Reserve button; secondary actions there are underlined links.",
+        "section": "colors"
+      },
+      {
+        "name": "The Cloth Is Indigo Rule",
+        "body": "Motifs are white at low strength (0.06 to 0.22 opacity) on indigo. Never colour a motif, never put cloth on white.",
+        "section": "colors"
+      },
+      {
+        "name": "The Scale Not Weight Rule",
+        "body": "Headlines are Young Serif 400 at a larger size; never bold a headline and never set a headline in Figtree.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Rule",
+        "body": "Every count, code, amount and table uses tabular figures.",
+        "section": "typography"
+      },
+      {
+        "name": "The Just Enough Rule",
+        "body": "Every screen shows only what is needed to act: no repeated information, no decorative sections, no filler copy, no invented testimonials, figures or promises. If a block restates something already on the screen, remove it.",
+        "section": "layout"
+      },
+      {
+        "name": "The One Lift Rule",
+        "body": "A card has one shadow, the card lift. Do not stack borders and shadows on cards.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Pass Alone Is Torn Rule",
+        "body": "The torn-paper bottom edge (a seeded clip-path, 34 teeth, up to 4% deep) appears on the pass and nowhere else. The pass is also the only rotated object (1.5deg on desktop, none on phones).",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "Do keep gold to light: lit seats, the Reserve action, Free, one lit headline word, and focus/current/selected cues. Use indigo or ghost buttons for every other action.",
+      "Do keep each screen to just enough information to act, with one primary action per region.",
+      "Do build every cloth field from the generated Adire motifs at 0.06 to 0.22 strength on indigo.",
+      "Do ship both modes: every surface reads in light and dark, with the dark tokens above.",
+      "Do let motion play once on arrival (seats light, pass draws in, tag drops) on the shared ease cubic-bezier(0.2, 0.8, 0.2, 1), and stop all animation and transition under prefers-reduced-motion.",
+      "Do use the real BTN Conference photos, credited, and Young Serif for names, numbers and codes.",
+      "Do set copy with typographic quotes and apostrophes (“ ” ’), never straight ones."
+    ],
+    "donts": [
+      "Don't use gold to decorate: whole headings, icon tiles, labels, backgrounds, or a second gold button in the same region.",
+      "Don't place the BTN logo anywhere except top left and the footer, and never on a card, panel or white box.",
+      "Don't use the torn edge on anything but the pass.",
+      "Don't repeat information already on the screen, add decorative sections, or write filler copy, invented figures, testimonials or promises.",
+      "Don't loop decorative motion; only a loading spinner may repeat.",
+      "Don't put cloth on white, colour the motifs, or add hard offset shadows.",
+      "Don't add small uppercase eyebrow labels above headings; uppercase is for field labels and terms only."
+    ]
+  }
+}

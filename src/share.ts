@@ -48,9 +48,9 @@ function makeCard(i: number): Promise<{ blob: Blob | null; dataUrl: string }> {
     const im = new Image();
     im.onload = () => {
       if (!x) return resolve({ blob: null, dataUrl: '' });
-      const lime =
-        getComputedStyle(document.documentElement).getPropertyValue('--lime').trim() || '#c6f000';
-      x.fillStyle = '#04200b';
+      const gold = '#f5b841';
+      const ink = '#0e2766';
+      x.fillStyle = ink;
       x.fillRect(0, 0, W, H);
       const [, fx, fy] = shot;
       const rw = W * 0.62;
@@ -61,40 +61,42 @@ function makeCard(i: number): Promise<{ blob: Blob | null; dataUrl: string }> {
       const oy = Math.min(0, Math.max(H - h, H / 2 - fy * h));
       x.drawImage(im, W - rw + ox, oy, w, h);
       const gr = x.createLinearGradient(0, 0, W, 0);
-      gr.addColorStop(0, '#04200bff');
-      gr.addColorStop(0.46, '#04200bf2');
-      gr.addColorStop(0.7, '#04200b66');
-      gr.addColorStop(1, '#04200b00');
+      gr.addColorStop(0, '#0e2766ff');
+      gr.addColorStop(0.46, '#0e2766f2');
+      gr.addColorStop(0.7, '#0e276666');
+      gr.addColorStop(1, '#0e276600');
       x.fillStyle = gr;
       x.fillRect(0, 0, W, H);
-      x.fillStyle = lime;
-      x.font = '400 120px Anton,Impact,sans-serif';
-      x.fillText('JUST PRAY', 60, 170);
+      x.fillStyle = gold;
+      x.font = "400 104px 'Young Serif',Georgia,serif";
+      x.fillText('Just Pray', 60, 160);
       x.fillStyle = '#fff';
-      x.font = '800 34px Montserrat,Arial,sans-serif';
+      x.font = '600 32px Figtree,Arial,sans-serif';
       [
         'Our goal: one protected afternoon',
         'each month for tech workers in Lagos',
         'to read Scripture and pray together.',
       ].forEach((t, k) => x.fillText(t, 60, 250 + k * 46));
-      x.font = '700 26px Montserrat,Arial,sans-serif';
-      x.fillStyle = '#cfe8c9';
+      x.font = '400 25px Figtree,Arial,sans-serif';
+      x.fillStyle = '#c5d6f2';
       [
         `Gather. Free, up to ${S.event?.capacity ?? 120} seats.`,
         'Pray. Scripture, then personal and group prayer.',
         'Keep going. A prayer rhythm between gatherings.',
       ].forEach((t, k) => x.fillText(t, 60, 420 + k * 40));
-      x.fillStyle = lime;
-      x.fillRect(60, H - 92, 6, 50);
+      x.fillStyle = gold;
+      x.beginPath();
+      x.arc(68, H - 76, 8, 0, Math.PI * 2);
+      x.fill();
       x.fillStyle = '#fff';
-      x.font = '800 28px Montserrat,Arial,sans-serif';
+      x.font = '600 28px Figtree,Arial,sans-serif';
       x.fillText(
         S.event ? `${longDate(S.event.date)} · ${S.event.time}` : 'Monthly in Lagos',
         80,
         H - 68,
       );
-      x.font = '600 22px Montserrat,Arial,sans-serif';
-      x.fillStyle = '#cfe8c9';
+      x.font = '400 22px Figtree,Arial,sans-serif';
+      x.fillStyle = '#c5d6f2';
       x.fillText('Believers Tech Network', 80, H - 40);
       const dataUrl = c.toDataURL('image/png');
       c.toBlob((blob) => resolve({ blob, dataUrl }), 'image/png');
@@ -116,7 +118,7 @@ export async function openShare(): Promise<void> {
   <div class="plat">${['wa', 'x', 'fb', 'in', 'tg', 'mail'].map((k) => `<a data-s="${k}" target="_blank" rel="noopener" style="--bc:${SHARE_ICONS[k]?.c}" aria-label="Share on ${SHARE_ICONS[k]?.n}" title="${SHARE_ICONS[k]?.n}">${icon(k)}</a>`).join('')}${['ig', 'tt'].map((k) => `<button type="button" data-share="native" style="--bc:${SHARE_ICONS[k]?.c}" aria-label="Share the image to ${SHARE_ICONS[k]?.n}" title="${SHARE_ICONS[k]?.n}">${icon(k)}</button>`).join('')}</div>
   <div class="plat2"><button type="button" data-share="copy">Copy text and link</button><a data-s="img" download="just-pray.png" href="${card.dataUrl}">Save image</a></div>
   <p class="fine">Instagram and TikTok have no web share link. On a phone those two open the share sheet with the picture attached. On a computer, save the image and post it. Facebook and LinkedIn show their own preview from the page address.</p>
-  <button class="btn dark x" data-share="close" type="button">Close</button></div>`;
+  <button class="btn x" data-share="close" type="button">Close</button></div>`;
   document.body.appendChild(e);
   const update = (): void => {
     const links = shareLinks($<HTMLTextAreaElement>('#stxt')?.value ?? '', SITE_URL);
