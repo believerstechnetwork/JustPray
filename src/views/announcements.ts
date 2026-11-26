@@ -1,4 +1,4 @@
-import { announcementEmail, eventDates } from '../../server/emails';
+import { announcementEmail, eventDates, themeLine, venueLine } from '../../server/emails';
 import type { Announcement, AnnouncementForm, UpcomingEvent } from '../data/types';
 import { IMG } from '../images';
 import { displayTime, esc, parseTime } from '../lib/format';
@@ -11,7 +11,18 @@ import { ICON } from './common';
 
 type CardFields = Pick<
   UpcomingEvent,
-  'title' | 'date' | 'endDate' | 'time' | 'venue' | 'summary' | 'imageUrl' | 'linkUrl' | 'linkLabel'
+  | 'title'
+  | 'date'
+  | 'endDate'
+  | 'time'
+  | 'theme'
+  | 'themeTba'
+  | 'venue'
+  | 'venueTba'
+  | 'summary'
+  | 'imageUrl'
+  | 'linkUrl'
+  | 'linkLabel'
 >;
 
 const EXTERNAL = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>`;
@@ -23,13 +34,22 @@ const when = (e: CardFields): string =>
         .join(' · ')
     : 'Date to be set';
 
+/** The theme line under the title: the theme in quotes, or "Theme to be announced". */
+const theme = (e: CardFields): string => {
+  const t = themeLine(e);
+  if (!t) return '';
+  return e.themeTba
+    ? '<p class="up-theme tba">Theme to be announced</p>'
+    : `<p class="up-theme">“${esc(t)}”</p>`;
+};
+
 /** One event as the home page lists it. */
 export function upcomingCard(e: CardFields): string {
   const link = e.linkUrl
     ? `<a class="btn small ghost" href="${esc(e.linkUrl)}" target="_blank" rel="noopener">${esc(e.linkLabel || 'Learn more')} ${EXTERNAL}<span class="sr"> (opens in a new tab)</span></a>`
     : '';
   return `<article class="up-card">${e.imageUrl ? `<figure class="up-img"><img src="${esc(e.imageUrl)}" alt="" loading="lazy"></figure>` : ''}
-  <div class="up-body"><span class="up-when">${ICON.cal}${esc(when(e))}</span><h3>${esc(e.title || 'Event title')}</h3><p>${esc(e.summary || 'A sentence or two about the event.')}</p><span class="up-where">${esc(e.venue || 'Venue')}</span>${link}</div></article>`;
+  <div class="up-body"><span class="up-when">${ICON.cal}${esc(when(e))}</span><h3>${esc(e.title || 'Event title')}</h3>${theme(e)}<p>${esc(e.summary || 'A sentence or two about the event.')}</p><span class="up-where">${esc(venueLine(e) || 'Venue')}</span>${link}</div></article>`;
 }
 
 /** The home-page section. Nothing at all when no other events are coming up. */
@@ -48,7 +68,8 @@ export function emailPreviewHtml(f: AnnouncementForm): string {
       ...f,
       title: f.title || 'Event title',
       date: f.date || new Date().toISOString().slice(0, 10),
-      venue: f.venue || 'Venue',
+      venue: f.venue || (f.venueTba ? '' : 'Venue'),
+      theme: f.theme ?? undefined,
       subject: f.subject || 'Subject',
       endDate: f.endDate ?? undefined,
       time: f.time ?? undefined,
@@ -91,7 +112,7 @@ function list(): string {
   const rows = (a.list ?? [])
     .map(
       (x) =>
-        `<div class="ann-row">${x.imageUrl ? `<img src="${esc(x.imageUrl)}" alt="">` : '<span class="ann-ph"></span>'}<div class="ann-t"><b>${esc(x.title)}</b><small>${esc(when(x))} · ${esc(x.venue)}</small></div><div class="ann-s">${statusOf(x)}</div><button class="btn small ghost" type="button" data-ann-edit="${x.id}">${x.status === 'draft' ? 'Edit' : 'Open'}</button></div>`,
+        `<div class="ann-row">${x.imageUrl ? `<img src="${esc(x.imageUrl)}" alt="">` : '<span class="ann-ph"></span>'}<div class="ann-t"><b>${esc(x.title)}</b><small>${esc(when(x))} · ${esc(venueLine(x))}</small></div><div class="ann-s">${statusOf(x)}</div><button class="btn small ghost" type="button" data-ann-edit="${x.id}">${x.status === 'draft' ? 'Edit' : 'Open'}</button></div>`,
     )
     .join('');
   return `<div class="block"><div class="block-h"><h2>Other BTN events</h2><button class="btn small ind" type="button" data-action="ann-new">New announcement</button></div>
@@ -121,7 +142,8 @@ function editor(): string {
   <h3>The event</h3>
   <div class="field"><label for="an-title">Title</label><input id="an-title" name="title" required maxlength="120" value="${val(f.title)}" placeholder="BTN Conference 2027"></div>
   <div class="formgrid"><div class="field"><label for="an-date">Date</label><input id="an-date" name="date" type="date" required value="${val(f.date)}"></div><div class="field"><label for="an-end">Last day <span class="opt">(optional)</span></label><input id="an-end" name="endDate" type="date" value="${val(f.endDate)}"></div></div>
-  <div class="formgrid"><div class="field"><label for="an-time">Start time <span class="opt">(optional)</span></label><input id="an-time" name="time" type="time" value="${val(f.time ? parseTime(f.time) : '')}"></div><div class="field"><label for="an-venue">Venue</label><input id="an-venue" name="venue" required maxlength="200" value="${val(f.venue)}" placeholder="Landmark Centre, Lagos, or Online"></div></div>
+  <div class="formgrid"><div class="field"><label for="an-time">Start time <span class="opt">(optional)</span></label><input id="an-time" name="time" type="time" value="${val(f.time ? parseTime(f.time) : '')}"></div><div class="field"><label for="an-venue">${f.venueTba ? 'City <span class="opt">(optional)</span>' : 'Venue'}</label><input id="an-venue" name="venue" maxlength="200" value="${val(f.venue)}" placeholder="${f.venueTba ? 'Lagos' : 'Landmark Centre, Lagos, or Online'}"><label class="check tba"><input type="checkbox" id="an-vtba" name="venueTba" data-ann-tba${f.venueTba ? ' checked' : ''}><span>Venue to be announced</span></label></div></div>
+  <div class="field"><label for="an-theme">Theme <span class="opt">(optional)</span></label><input id="an-theme" name="theme" maxlength="160" value="${val(f.themeTba ? '' : f.theme)}" placeholder="Building with purpose"${f.themeTba ? ' disabled' : ''}><label class="check tba"><input type="checkbox" id="an-ttba" name="themeTba" data-ann-tba${f.themeTba ? ' checked' : ''}><span>Theme to be announced</span></label></div>
   <div class="field"><label for="an-sum">Summary</label><textarea id="an-sum" name="summary" rows="2" maxlength="280" required>${val(f.summary)}</textarea><span class="hint">One or two sentences, shown on the site and as the inbox preview line.</span></div>
   <div class="field"><span class="flabel" id="an-pic-l">Picture <span class="opt">(optional)</span></span><div class="ann-photos" role="group" aria-labelledby="an-pic-l">${photos}<button type="button" data-ann-photo="" aria-pressed="${!f.imageUrl}" class="none">None</button></div>
   <label class="sr" for="an-img">Picture link</label><input id="an-img" name="imageUrl" value="${val(f.imageUrl)}" placeholder="Or paste a picture link: https://…"></div>

@@ -257,8 +257,11 @@ export interface AnnouncementContent {
   endDate?: string;
   /** Optional "HH:MM" start time in Lagos. */
   time?: string;
-  /** A place, or "Online". */
+  theme?: string;
+  themeTba?: boolean;
+  /** A place, or "Online". With `venueTba`, an optional city. */
   venue: string;
+  venueTba?: boolean;
   /** One or two sentences, used on the site and as the inbox preview line. */
   summary: string;
   /** Absolute URL of a wide picture, optional. */
@@ -281,6 +284,19 @@ export function eventDates(date: string, endDate?: string): string {
   if (a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth())
     return `${a.getDate()} to ${dm(b, { day: 'numeric', month: 'long', year: 'numeric' })}`;
   return `${dm(a, { day: 'numeric', month: 'long' })} to ${dm(b, { day: 'numeric', month: 'long', year: 'numeric' })}`;
+}
+
+/** "Landmark Centre, Lagos"; "Lagos · venue to be announced"; or "Venue to be announced". */
+export function venueLine(a: { venue: string; venueTba?: boolean | null }): string {
+  const v = a.venue.trim();
+  if (!a.venueTba) return v;
+  return v ? `${v} · venue to be announced` : 'Venue to be announced';
+}
+
+/** The theme as shown, "To be announced", or null when the event has no theme. */
+export function themeLine(a: { theme?: string | null; themeTba?: boolean | null }): string | null {
+  if (a.themeTba) return 'To be announced';
+  return a.theme?.trim() || null;
 }
 
 /** The small set of formatting the message box allows, made safe: everything is escaped first. */
@@ -307,22 +323,31 @@ const personalise = (text: string, first: string): string =>
 
 /** The event card in an announcement: an indigo strip with the date, then the details. */
 function eventCard(a: AnnouncementContent): string {
+  const theme = themeLine(a);
   const details: Detail[] = [
     { label: 'Date', value: eventDates(a.date, a.endDate) },
     ...(a.time ? [{ label: 'Time', value: displayTime(a.time) }] : []),
-    { label: a.venue.toLowerCase() === 'online' ? 'Where' : 'Venue', value: a.venue },
+    { label: a.venue.toLowerCase() === 'online' ? 'Where' : 'Venue', value: venueLine(a) },
+    ...(theme ? [{ label: 'Theme', value: theme }] : []),
   ];
   const d = new Date(`${a.date}T12:00:00`);
   const month = d.toLocaleDateString('en-GB', { month: 'short' }).toUpperCase();
+  // Two details per row, so a long venue or theme has room.
   const cells = details
     .map(
       (x) =>
-        `<td class="stub-cell" valign="top" style="padding:0 16px 16px 0"><div class="mute" style="font:600 11px/1.3 ${SANS};letter-spacing:.08em;text-transform:uppercase;color:${C.ink2}">${esc(x.label)}</div><div class="ink" style="font:600 16px/1.4 ${SANS};color:${C.ink};padding-top:3px">${esc(x.value)}</div></td>`,
+        `<td class="stub-cell" valign="top" width="50%" style="padding:0 16px 16px 0"><div class="mute" style="font:600 11px/1.3 ${SANS};letter-spacing:.08em;text-transform:uppercase;color:${C.ink2}">${esc(x.label)}</div><div class="ink" style="font:600 16px/1.4 ${SANS};color:${C.ink};padding-top:3px">${esc(x.value)}</div></td>`,
     )
+    .reduce<string[]>((rows, cell, i) => {
+      if (i % 2 === 0) rows.push(cell);
+      else rows[rows.length - 1] += cell;
+      return rows;
+    }, [])
+    .map((r) => `<tr>${r}</tr>`)
     .join('');
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;margin:26px 0 24px">
 <tr><td style="${fixed(C.indigo)};border-radius:16px 16px 0 0;padding:18px 22px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td valign="bottom" style="font:600 12px/1.4 ${SANS};letter-spacing:.16em;text-transform:uppercase;color:#C5D6F2">From Believers<br>Tech Network</td><td align="right" valign="bottom" style="font:400 13px/1 ${SANS};letter-spacing:.12em;color:#C5D6F2">${month} <span style="font:400 40px/1 ${SERIF};letter-spacing:0;color:${C.gold}">${d.getDate()}</span></td></tr></table></td></tr>
-<tr><td class="stub" style="background:${C.tint};border-top:2px dashed ${C.rule};border-radius:0 0 16px 16px;padding:18px 22px 4px"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>${cells}</tr></table></td></tr>
+<tr><td class="stub" style="background:${C.tint};border-top:2px dashed ${C.rule};border-radius:0 0 16px 16px;padding:18px 22px 4px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${cells}</table></td></tr>
 </table>`;
 }
 
@@ -348,7 +373,8 @@ export function announcementEmail(input: AnnouncementInput): Email {
     '',
     a.title,
     `When:  ${when}`,
-    `Where: ${a.venue}`,
+    `Where: ${venueLine(a)}`,
+    ...(themeLine(a) ? [`Theme: ${themeLine(a)}`] : []),
     ...(a.linkUrl ? ['', `${a.linkLabel || 'Learn more'}: ${a.linkUrl}`] : []),
     '',
     'Believers Tech Network',

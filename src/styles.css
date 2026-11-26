@@ -1583,12 +1583,35 @@ td.acts .btn + .btn {
 .up-card p {
   color: var(--ink-2);
 }
+.up-card .up-theme {
+  font: 400 19px/1.35 var(--display);
+  color: var(--ink);
+}
+.up-card .up-theme.tba {
+  font: 600 14px var(--body);
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+}
 .up-where {
   font-weight: 600;
   font-size: 15px;
 }
 .up-card .btn {
   margin-top: 10px;
+}
+
+/* ---------- the celebration burst ---------- */
+.burst {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 80;
+  overflow: hidden;
+}
+.burst i {
+  position: absolute;
+  border-radius: 50%;
+  will-change: transform, opacity;
 }
 
 /* ---------- organiser: announcements ---------- */
@@ -1677,6 +1700,18 @@ td.acts .btn + .btn {
 }
 .ann-form .notice {
   margin-top: 14px;
+}
+.field .check.tba {
+  display: flex;
+  margin: 10px 0 0;
+  font: 400 15px/1.4 var(--body);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink);
+}
+.field input:disabled {
+  background: var(--mute-t);
+  color: var(--ink-2);
 }
 .ann-photos {
   display: flex;

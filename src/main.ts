@@ -1,5 +1,6 @@
 import './styles.css';
 import { api, ApiError } from './api';
+import { burst } from './lib/burst';
 import { latestGuard } from './lib/latest';
 import { validateContribution, validateRegistration } from './lib/validation';
 import { handleShareClick, initShareKeys } from './share';
@@ -293,7 +294,10 @@ function syncAnnForm(): void {
     date: str('date'),
     endDate: str('endDate') || null,
     time: str('time') || null,
+    theme: str('theme') || null,
+    themeTba: d.get('themeTba') === 'on',
     venue: str('venue'),
+    venueTba: d.get('venueTba') === 'on',
     summary: str('summary'),
     imageUrl: str('imageUrl') || null,
     linkUrl: str('linkUrl') || null,
@@ -396,6 +400,12 @@ async function annAction(action: string, el: HTMLElement): Promise<void> {
         a.confirming = false;
         a.editing = null;
         a.notice = `Published. Emailing ${announcement.recipients} people.`;
+        freshForm = true;
+        S.busy = false;
+        render();
+        const row = page.querySelector('.ann-row');
+        if (row) burst(row, { count: 48, spread: 240 });
+        return;
       } catch (e) {
         a.error = errorMessage(e);
         a.confirming = false;
@@ -436,6 +446,20 @@ window.addEventListener('hashchange', applyRoute);
 
 document.addEventListener('click', async (e) => {
   const target = e.target as HTMLElement;
+  // A click to register for another BTN event: a burst first, then the link opens in a new tab
+  // (opening it straight away would hide the burst behind the new tab).
+  const register = target.closest<HTMLAnchorElement>('.up-card a.btn');
+  if (register && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    e.preventDefault();
+    burst(register, { count: 36, spread: 170 });
+    setTimeout(() => {
+      // ("noopener" would make window.open return null, so cut the link to this page instead.)
+      const tab = window.open(register.href, '_blank');
+      if (tab) tab.opener = null;
+      else location.href = register.href;
+    }, 450);
+    return;
+  }
   if (await handleShareClick(target)) return;
   const el = target.closest<HTMLElement>(
     '[data-route],[data-amount],[data-tab],[data-action],[data-copy],[data-contrib],[data-currency],[data-ann-edit],[data-ann-view],[data-ann-device],[data-ann-photo]',
@@ -557,7 +581,13 @@ async function submitRegister(data: FormData): Promise<void> {
       S.attendee = res.reservation;
       S.attendeeEmailed = res.emailQueued;
       S.busy = false;
-      return go('confirmed');
+      go('confirmed');
+      // Celebrate as the seat number drops onto the pass.
+      setTimeout(() => {
+        const seat = document.querySelector('.pass .seatno') ?? document.querySelector('.pass');
+        if (seat) burst(seat, { count: 64, spread: 300, on: 'cloth' });
+      }, 650);
+      return;
     }
     S.registerNotice =
       res.status === 'full'
@@ -686,9 +716,12 @@ try {
 }
 // Typing in the announcement form redraws its preview only.
 document.addEventListener('input', (e) => {
-  if ((e.target as HTMLElement).closest('form[data-form="announcement"]')) {
+  const t = e.target as HTMLElement;
+  if (t.closest('form[data-form="announcement"]')) {
     syncAnnForm();
-    refreshAnnPreview();
+    // A "to be announced" box changes the form itself (label, disabled field): redraw it all.
+    if (t.matches('[data-ann-tba]')) render();
+    else refreshAnnPreview();
   }
 });
 

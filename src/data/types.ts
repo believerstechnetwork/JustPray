@@ -30,7 +30,10 @@ export interface UpcomingEvent {
   date: string;
   endDate: string | null;
   time: string | null;
+  theme: string | null;
+  themeTba: boolean;
   venue: string;
+  venueTba: boolean;
   summary: string;
   imageUrl: string | null;
   linkUrl: string | null;

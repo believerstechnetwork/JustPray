@@ -187,7 +187,10 @@ export function validAnnouncement(body: unknown): AnnouncementFields {
     date: str('date'),
     endDate: orNull(str('endDate')),
     time: str('time') ? parseTime(str('time')) : null,
+    theme: orNull(str('theme')),
+    themeTba: field(body, 'themeTba') === true,
     venue: str('venue'),
+    venueTba: field(body, 'venueTba') === true,
     summary: str('summary'),
     imageUrl: orNull(str('imageUrl')),
     linkUrl: orNull(str('linkUrl')),
@@ -196,8 +199,11 @@ export function validAnnouncement(body: unknown): AnnouncementFields {
     message: str('message'),
   };
   const isDate = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d));
-  if (!f.title || !f.venue || !f.summary || !f.subject || !f.message)
-    throw new HttpError(400, 'Fill in the title, venue, summary, subject and message.');
+  if (!f.title || !f.summary || !f.subject || !f.message)
+    throw new HttpError(400, 'Fill in the title, summary, subject and message.');
+  if (!f.venue && !f.venueTba)
+    throw new HttpError(400, 'Fill in the venue, or tick “Venue to be announced”.');
+  if (f.themeTba) f.theme = null;
   if (!isDate(f.date)) throw new HttpError(400, 'Enter the event date.');
   if (f.endDate && (!isDate(f.endDate) || f.endDate < f.date))
     throw new HttpError(400, 'The end date must be on or after the start date.');
@@ -206,8 +212,10 @@ export function validAnnouncement(body: unknown): AnnouncementFields {
     throw new HttpError(400, 'The picture link must start with https://');
   if (f.linkUrl && !httpsUrl(f.linkUrl))
     throw new HttpError(400, 'The button link must start with https://');
-  const limits: [keyof AnnouncementFields, number][] = [
+  type TextField = 'title' | 'theme' | 'venue' | 'summary' | 'linkLabel' | 'subject' | 'message';
+  const limits: [TextField, number][] = [
     ['title', 120],
+    ['theme', 160],
     ['venue', 200],
     ['summary', 280],
     ['linkLabel', 40],
@@ -226,7 +234,10 @@ const publicAnnouncement = (a: AnnouncementRecord) => ({
   date: a.date,
   endDate: a.endDate,
   time: a.time,
+  theme: a.theme,
+  themeTba: a.themeTba,
   venue: a.venue,
+  venueTba: a.venueTba,
   summary: a.summary,
   imageUrl: a.imageUrl,
   linkUrl: a.linkUrl,

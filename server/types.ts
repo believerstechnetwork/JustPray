@@ -100,7 +100,14 @@ export interface AnnouncementFields {
   endDate: string | null;
   /** "HH:MM" in Lagos, or null. */
   time: string | null;
+  /** The event's theme, e.g. "Building with purpose"; null when there is none (yet). */
+  theme: string | null;
+  /** The theme is still to be announced. */
+  themeTba: boolean;
+  /** A place, or "Online". With `venueTba`, an optional city such as "Lagos". */
   venue: string;
+  /** The venue is still to be announced. */
+  venueTba: boolean;
   summary: string;
   imageUrl: string | null;
   linkUrl: string | null;
