@@ -225,6 +225,7 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
     name: string,
     email: string,
     event: EventDetails,
+    eventId: number | null,
     cancelToken: string,
   ): boolean =>
     sendLater(`Confirmation email for ${held.code}`, async (mailer) => {
@@ -233,7 +234,7 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
       const hash = hashToken(cancelToken);
       try {
         await mailer.send(
-          reservationEmail({ name, email, seat, code, event, siteUrl, cancelUrl: link }),
+          reservationEmail({ name, email, seat, code, event, eventId, siteUrl, cancelUrl: link }),
         );
       } catch (e) {
         // Only a failure that is recorded lets a later booking attempt re-send the email.
@@ -290,7 +291,7 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
       const result = validateRegistration(fieldsOf(body));
       if (!result.ok) return json(400, { error: 'Please check the form.', fields: result.errors });
       const { name, email, phone, updates } = result.value;
-      const event = await db().currentEvent();
+      const [event, eventId] = await Promise.all([db().currentEvent(), db().currentEventId()]);
       if (!event) return fail(503, 'Reservations are not open yet. Please check back soon.');
       const cancelToken = newCancelToken();
       const outcome = await db().reserve({
@@ -312,7 +313,7 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
         if (outcome.emailSentAt === null && deps.mailer) {
           const fresh = newCancelToken();
           if (await db().claimEmailRetry(outcome.id, hashToken(fresh)))
-            emailQueued = sendConfirmation(outcome, name, email, event, fresh);
+            emailQueued = sendConfirmation(outcome, name, email, event, eventId, fresh);
         }
         return json(200, {
           status: 'existing',
@@ -321,7 +322,7 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
           emailQueued,
         });
       }
-      const emailQueued = sendConfirmation(outcome, name, email, event, cancelToken);
+      const emailQueued = sendConfirmation(outcome, name, email, event, eventId, cancelToken);
       return json(201, {
         status: 'created',
         reservation: { seat: outcome.seat, code: outcome.code, name, email, phone, cancelToken },
@@ -332,11 +333,11 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
     }
 
     if (path === '/api/event.ics' && method === 'GET') {
-      // Emails name their gathering by date, so an older email keeps giving its own gathering
-      // after the next one is set up.
-      const date = url.searchParams.get('date') ?? '';
-      const event = /^\d{4}-\d{2}-\d{2}$/.test(date)
-        ? await db().eventOn(date)
+      // Emails name their gathering by its record id, so an older email keeps giving its own
+      // gathering, with its latest details (a new date if it was moved), whatever is current.
+      const id = url.searchParams.get('event') ?? '';
+      const event = /^\d{1,12}$/.test(id)
+        ? await db().eventById(Number(id))
         : await db().currentEvent();
       if (!event) return fail(404, 'That gathering is not listed any more.');
       return new Response(icsFile(event, siteUrl), {

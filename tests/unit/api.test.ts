@@ -602,16 +602,19 @@ describe('event time and calendar', () => {
     expect(bad.data.error).toBe('Choose a start time.');
   });
 
-  it('serves the calendar file for the gathering named in the email', async () => {
-    const named = await call('GET', '/api/event.ics?date=2027-01-30');
-    expect(named.status).toBe(200);
-    // After the organisers move on to another date, an older email's link does not give the
-    // newer gathering.
+  it('serves the calendar file for the gathering named in the email, even after it is edited', async () => {
+    await call('POST', '/api/reserve', person('ada@example.com'));
+    await Promise.all(deferred);
+    const link = /\/api\/event\.ics\?event=(\d+)/.exec(mailer.sent[0]?.text ?? '');
+    expect(link?.[1]).toBe('1');
+    const before = await call('GET', `/api/event.ics?event=${link?.[1]}`);
+    expect(await before.res.text()).toContain('DTSTART:20270130T150000Z');
+    // The gathering is moved: the same link still works and gives the new date.
     await call('PUT', '/api/admin/event', { ...EVENT, date: '2027-02-27' }, adminCookie());
-    expect((await call('GET', '/api/event.ics?date=2027-01-30')).status).toBe(404);
-    expect(await (await call('GET', '/api/event.ics?date=2027-02-27')).res.text()).toContain(
-      'DTSTART:20270227T150000Z',
-    );
+    const after = await call('GET', `/api/event.ics?event=${link?.[1]}`);
+    expect(after.status).toBe(200);
+    expect(await after.res.text()).toContain('DTSTART:20270227T150000Z');
+    expect((await call('GET', '/api/event.ics?event=999')).status).toBe(404);
   });
 
   it('serves a calendar file for the current gathering', async () => {

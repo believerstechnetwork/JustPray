@@ -41,8 +41,13 @@ export class MemoryDb implements Db {
     return this.event ? { ...this.event } : null;
   }
 
-  async eventOn(isoDate: string): Promise<EventDetails | null> {
-    return this.event?.date === isoDate ? { ...this.event } : null;
+  /** The in-memory store holds one gathering, with id 1. */
+  async currentEventId(): Promise<number | null> {
+    return this.event ? 1 : null;
+  }
+
+  async eventById(id: number): Promise<EventDetails | null> {
+    return id === 1 && this.event ? { ...this.event } : null;
   }
 
   private active(): ReservationRecord[] {

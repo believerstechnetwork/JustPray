@@ -332,11 +332,26 @@ describe('SupabaseDb', () => {
     expect(seen[0]?.query).toContain('or=(email_failed_at.not.is.null,cancel_hash.is.null)');
   });
 
-  it('finds a gathering by its date, the latest saved first', async () => {
-    const { db, seen } = fakeSupabase([{ body: [] }]);
-    expect(await db.eventOn('2027-01-30')).toBeNull();
-    expect(seen[0]?.query).toContain('date=eq.2027-01-30');
-    expect(seen[0]?.query).toContain('order=id.desc');
+  it('finds a gathering by its record id, current or not', async () => {
+    const { db, seen } = fakeSupabase([
+      {
+        body: [
+          {
+            id: 3,
+            title: 'T',
+            date: '2027-01-30',
+            time: '16:00',
+            venue: 'V',
+            capacity: 9,
+            is_current: false,
+          },
+        ],
+      },
+      { body: [] },
+    ]);
+    expect(await db.eventById(3)).toMatchObject({ title: 'T', date: '2027-01-30' });
+    expect(seen[0]?.query).toContain('id=eq.3');
+    expect(await db.eventById(4)).toBeNull();
   });
 
   it('maps contribution rows', async () => {

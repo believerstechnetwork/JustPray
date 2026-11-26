@@ -131,6 +131,8 @@ export interface ConfirmationInput {
   seat: number;
   code: string;
   event: EventDetails;
+  /** The gathering's record id, so the calendar-file link keeps naming this gathering. */
+  eventId?: number | null;
   siteUrl: string;
   /** Private link that lets this person cancel their own seat. */
   cancelUrl: string;
@@ -138,13 +140,13 @@ export interface ConfirmationInput {
 
 /** The email sent when someone reserves a seat. */
 export function reservationEmail(input: ConfirmationInput): Email {
-  const { name, email, seat, code, event, siteUrl, cancelUrl } = input;
+  const { name, email, seat, code, event, eventId, siteUrl, cancelUrl } = input;
   const first = firstName(name);
   const date = longDate(event.date);
   const time = displayTime(event.time);
   const site = siteUrl.replace(/\/+$/, '');
   const calendar = googleCalendarUrl(event, site);
-  const ics = `${site}/api/event.ics?date=${event.date}`;
+  const ics = `${site}/api/event.ics${eventId ? `?event=${eventId}` : ''}`;
   const maps = mapsUrl(event.venue);
 
   const text = [

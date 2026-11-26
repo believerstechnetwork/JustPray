@@ -96,15 +96,13 @@ export class SupabaseDb implements Db {
     return row ? toEvent(row) : null;
   }
 
-  async eventOn(isoDate: string): Promise<EventDetails | null> {
-    const rows = check(
-      await this.sb
-        .from('events')
-        .select('*')
-        .eq('date', isoDate)
-        .order('id', { ascending: false })
-        .limit(1),
-    ) as Row[];
+  async currentEventId(): Promise<number | null> {
+    const row = await this.currentEventRow();
+    return row ? n(row.id) : null;
+  }
+
+  async eventById(id: number): Promise<EventDetails | null> {
+    const rows = check(await this.sb.from('events').select('*').eq('id', id).limit(1)) as Row[];
     return rows[0] ? toEvent(rows[0]) : null;
   }
 

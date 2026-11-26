@@ -80,6 +80,7 @@ describe('emails', () => {
       seat: 48,
       code: 'JP-0048',
       event: EVENT,
+      eventId: 7,
       siteUrl: `${SITE}/`,
       cancelUrl: `${SITE}/#/cancel/tok`,
     });
@@ -91,7 +92,7 @@ describe('emails', () => {
       expect(part).toContain('4:00 PM WAT');
       expect(part).toContain('JP-0048');
       expect(part).toContain('calendar.google.com');
-      expect(part).toContain(`${SITE}/api/event.ics?date=2027-01-30`);
+      expect(part).toContain(`${SITE}/api/event.ics?event=7`);
       expect(part).toContain('google.com/maps');
       expect(part).toContain(`${SITE}/#/cancel/tok`);
     }

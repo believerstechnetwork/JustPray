@@ -95,8 +95,10 @@ export interface NewContribution {
 /** Storage used by the API. `SupabaseDb` in production, `MemoryDb` in tests and local dev. */
 export interface Db {
   currentEvent(): Promise<EventDetails | null>;
-  /** The gathering on this date (the latest saved, if several), current or not. */
-  eventOn(isoDate: string): Promise<EventDetails | null>;
+  /** The id of the current gathering's record, which stays the same when its details are edited. */
+  currentEventId(): Promise<number | null>;
+  /** A gathering by its record id, current or not, with its latest details. */
+  eventById(id: number): Promise<EventDetails | null>;
   /** Refuses (and changes nothing) when capacity is below the seats already reserved. */
   updateEvent(event: EventDetails): Promise<UpdateEventOutcome>;
   /** Seats held now: cancelled reservations do not count. */
