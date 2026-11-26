@@ -4,7 +4,16 @@ import { latestGuard } from './lib/latest';
 import { validateContribution, validateRegistration } from './lib/validation';
 import { handleShareClick, initShareKeys } from './share';
 import type { Currency } from './data/types';
-import { PRESETS, ROUTES, S, type AdminTab, type Route, type Theme } from './state';
+import {
+  blankAnnouncement,
+  PRESETS,
+  ROUTES,
+  S,
+  type AdminTab,
+  type Route,
+  type Theme,
+} from './state';
+import { previewInner } from './views/announcements';
 import { admin } from './views/admin';
 import { cancel } from './views/cancel';
 import { confirmed } from './views/confirmed';
@@ -76,8 +85,13 @@ function restore(snap: ReturnType<typeof snapshot>): void {
   if (snap.focus) document.getElementById(snap.focus)?.focus();
 }
 
+/** Set when a different form is opened in place (another announcement), so what was typed in
+ *  the previous one is not carried over by the next render. */
+let freshForm = false;
+
 function render(): void {
-  const snap = renderedPage === S.page ? snapshot() : null;
+  const snap = renderedPage === S.page && !freshForm ? snapshot() : null;
+  freshForm = false;
   document.documentElement.dataset.mode = S.theme;
   document.title = TITLES[S.page];
   page.innerHTML = views[S.page]();
@@ -85,6 +99,19 @@ function render(): void {
   main?.setAttribute('id', 'main');
   if (snap) restore(snap);
   renderedPage = S.page;
+  fitMailFrames();
+}
+
+/** Grow each email preview frame to the email's full height, so the whole email shows. */
+function fitMailFrames(): void {
+  page.querySelectorAll<HTMLIFrameElement>('iframe.mail').forEach((f) => {
+    const fit = () => {
+      const h = f.contentDocument?.documentElement.scrollHeight;
+      if (h) f.style.height = `${h}px`;
+    };
+    f.addEventListener('load', fit, { once: true });
+    fit();
+  });
 }
 
 /** Navigate: sets the hash, which triggers a render via hashchange. */
@@ -103,6 +130,7 @@ async function loadPublic(): Promise<void> {
     if (eventAtStart === eventVersion) S.event = info.event;
     seatCount.applyRead(ticket, () => (S.reserved = info.reserved));
     S.banks = info.banks;
+    S.upcoming = info.upcoming ?? [];
     // Offer dollars by default only when there is no naira account.
     if (!S.banks.NGN && S.banks.USD && S.currency !== 'USD') {
       setCurrency('USD');
@@ -237,6 +265,158 @@ async function copy(button: HTMLElement): Promise<void> {
   setTimeout(() => (hint.textContent = label), 1600);
 }
 
+/* ---------- announcements ---------- */
+
+async function loadAnnouncements(): Promise<void> {
+  try {
+    const res = await api.announcements();
+    S.ann.list = res.announcements;
+    S.ann.audience = res.audience;
+  } catch (e) {
+    S.ann.error = errorMessage(e);
+    if (e instanceof ApiError && e.status === 401) S.adminAuthed = false;
+  }
+  if (S.page === 'admin' && S.tab === 'announcements') render();
+}
+
+const annFormEl = (): HTMLFormElement | null =>
+  page.querySelector<HTMLFormElement>('form[data-form="announcement"]');
+
+/** Copy what is typed in the announcement form into the state, so a re-render keeps it. */
+function syncAnnForm(): void {
+  const form = annFormEl();
+  if (!form) return;
+  const d = new FormData(form);
+  const str = (k: string): string => String(d.get(k) ?? '').trim();
+  S.ann.form = {
+    title: str('title'),
+    date: str('date'),
+    endDate: str('endDate') || null,
+    time: str('time') || null,
+    venue: str('venue'),
+    summary: str('summary'),
+    imageUrl: str('imageUrl') || null,
+    linkUrl: str('linkUrl') || null,
+    linkLabel: str('linkLabel') || null,
+    subject: str('subject'),
+    message: String(d.get('message') ?? ''),
+  };
+}
+
+let previewTimer: ReturnType<typeof setTimeout> | undefined;
+/** Redraw only the preview pane, so typing never loses its place. */
+function refreshAnnPreview(): void {
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(() => {
+    const frame = document.getElementById('ann-frame');
+    if (frame) frame.innerHTML = previewInner();
+    fitMailFrames();
+    const subj = document.getElementById('ann-subj');
+    if (subj) subj.textContent = S.ann.form.subject || '…';
+  }, 200);
+}
+
+/** Save the form as a draft (or the published event's site details). Returns its id. */
+async function saveAnnouncement(): Promise<number | null> {
+  syncAnnForm();
+  S.ann.error = '';
+  S.ann.notice = '';
+  try {
+    const { announcement } =
+      typeof S.ann.editing === 'number'
+        ? await api.updateAnnouncement(S.ann.editing, S.ann.form)
+        : await api.createAnnouncement(S.ann.form);
+    S.ann.editing = announcement.id;
+    const list = S.ann.list ?? [];
+    S.ann.list = [announcement, ...list.filter((x) => x.id !== announcement.id)];
+    return announcement.id;
+  } catch (e) {
+    S.ann.error = errorMessage(e);
+    if (e instanceof ApiError && e.status === 401) S.adminAuthed = false;
+    return null;
+  }
+}
+
+async function annAction(action: string, el: HTMLElement): Promise<void> {
+  const a = S.ann;
+  if (el.dataset.annEdit) {
+    const x = a.list?.find((y) => y.id === Number(el.dataset.annEdit));
+    if (!x) return;
+    a.editing = x.id;
+    a.form = { ...x };
+    a.error = a.notice = '';
+    freshForm = true;
+    return render();
+  }
+  if (el.dataset.annView || el.dataset.annDevice) {
+    syncAnnForm();
+    if (el.dataset.annView) a.view = el.dataset.annView as 'email' | 'site';
+    if (el.dataset.annDevice) a.device = el.dataset.annDevice as 'laptop' | 'phone';
+    return render();
+  }
+  if (el.dataset.annPhoto !== undefined) {
+    const input = document.getElementById('an-img') as HTMLInputElement | null;
+    if (input) input.value = el.dataset.annPhoto;
+    page
+      .querySelectorAll<HTMLElement>('[data-ann-photo]')
+      .forEach((b) => b.setAttribute('aria-pressed', String(b === el)));
+    syncAnnForm();
+    return refreshAnnPreview();
+  }
+  switch (action) {
+    case 'ann-new':
+      a.editing = 'new';
+      a.form = blankAnnouncement();
+      a.error = a.notice = '';
+      freshForm = true;
+      return render();
+    case 'ann-back':
+      a.editing = null;
+      a.error = a.notice = '';
+      render();
+      return loadAnnouncements();
+    case 'ann-publish': {
+      if (S.busy) return;
+      S.busy = true;
+      const id = await saveAnnouncement();
+      S.busy = false;
+      if (id !== null) a.confirming = true;
+      return render();
+    }
+    case 'ann-cancel':
+      a.confirming = false;
+      return render();
+    case 'ann-confirm': {
+      if (S.busy || typeof a.editing !== 'number') return;
+      S.busy = true;
+      render();
+      try {
+        const { announcement } = await api.publishAnnouncement(a.editing);
+        a.list = (a.list ?? []).map((x) => (x.id === announcement.id ? announcement : x));
+        a.confirming = false;
+        a.editing = null;
+        a.notice = `Published. Emailing ${announcement.recipients} people.`;
+      } catch (e) {
+        a.error = errorMessage(e);
+        a.confirming = false;
+      }
+      S.busy = false;
+      return render();
+    }
+    case 'ann-delete': {
+      if (typeof a.editing !== 'number' || !window.confirm('Delete this draft?')) return;
+      try {
+        await api.deleteAnnouncement(a.editing);
+        a.list = (a.list ?? []).filter((x) => x.id !== a.editing);
+        a.editing = null;
+      } catch (e) {
+        a.error = errorMessage(e);
+      }
+      return render();
+    }
+  }
+}
+
 async function setContribution(id: number, status: string): Promise<void> {
   if (S.busy) return;
   S.busy = true;
@@ -258,10 +438,18 @@ document.addEventListener('click', async (e) => {
   const target = e.target as HTMLElement;
   if (await handleShareClick(target)) return;
   const el = target.closest<HTMLElement>(
-    '[data-route],[data-amount],[data-tab],[data-action],[data-copy],[data-contrib],[data-currency]',
+    '[data-route],[data-amount],[data-tab],[data-action],[data-copy],[data-contrib],[data-currency],[data-ann-edit],[data-ann-view],[data-ann-device],[data-ann-photo]',
   );
   if (!el) return;
   const d = el.dataset;
+  if (
+    d.annEdit ||
+    d.annView ||
+    d.annDevice ||
+    d.annPhoto !== undefined ||
+    d.action?.startsWith('ann-')
+  )
+    return annAction(d.action ?? '', el);
   if (d.route) return go(d.route as Route);
   if (d.copy !== undefined) return copy(el);
   if (d.contrib) return setContribution(Number(d.contrib), d.status ?? '');
@@ -282,6 +470,10 @@ document.addEventListener('click', async (e) => {
     S.tab = d.tab as AdminTab;
     S.adminNotice = '';
     S.adminError = '';
+    if (S.tab === 'announcements') {
+      S.ann.editing = null;
+      void loadAnnouncements();
+    }
     return render();
   }
   if (d.amount) {
@@ -470,6 +662,17 @@ document.addEventListener('submit', (e) => {
     setTimeout(() => document.getElementById('p')?.focus(), 60);
     return;
   }
+  if (kind === 'announcement') {
+    void (async () => {
+      S.busy = true;
+      render();
+      const id = await saveAnnouncement();
+      S.busy = false;
+      if (id !== null) S.ann.notice = 'Saved.';
+      render();
+    })();
+    return;
+  }
   if (kind === 'register') void submitRegister(data);
   else if (kind === 'support') void submitSupport(data);
   else if (kind === 'event') void submitEvent(data);
@@ -481,6 +684,14 @@ try {
 } catch {
   /* storage blocked */
 }
+// Typing in the announcement form redraws its preview only.
+document.addEventListener('input', (e) => {
+  if ((e.target as HTMLElement).closest('form[data-form="announcement"]')) {
+    syncAnnForm();
+    refreshAnnPreview();
+  }
+});
+
 initShareKeys();
 applyRoute();
 void loadPublic();

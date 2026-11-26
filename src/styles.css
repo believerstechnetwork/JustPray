@@ -1508,6 +1508,292 @@ td.acts .btn + .btn {
   max-width: 440px;
 }
 
+/* ---------- other BTN events: home-page list ---------- */
+.upcoming {
+  padding: 120px 0 0;
+}
+.upcoming .sec-h {
+  font-size: clamp(32px, 3.4vw, 44px);
+}
+.up-h p {
+  color: var(--ink-2);
+  margin-top: 10px;
+  font-size: 18px;
+}
+.up-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 28px;
+  margin-top: 44px;
+}
+.up-card {
+  background: var(--card);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+.up-list.one .up-card {
+  grid-template-columns: 1.1fr 1fr;
+  grid-template-rows: none;
+}
+.up-img {
+  aspect-ratio: 16 / 9;
+  background: var(--mute-t);
+}
+.up-list.one .up-img {
+  aspect-ratio: auto;
+  min-height: 320px;
+}
+.up-img img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.up-body {
+  padding: 26px 28px 30px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+.up-list.one .up-body {
+  padding: 40px 44px;
+  justify-content: center;
+}
+.up-when {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: 600 14px var(--body);
+  color: var(--blue);
+}
+.up-when svg {
+  width: 18px;
+  height: 18px;
+}
+.up-card h3 {
+  font-size: 30px;
+  line-height: 1.1;
+}
+.up-list.one .up-card h3 {
+  font-size: clamp(32px, 3.4vw, 44px);
+}
+.up-card p {
+  color: var(--ink-2);
+}
+.up-where {
+  font-weight: 600;
+  font-size: 15px;
+}
+.up-card .btn {
+  margin-top: 10px;
+}
+
+/* ---------- organiser: announcements ---------- */
+.field textarea {
+  width: 100%;
+  border-radius: 12px;
+  border: 1.5px solid var(--field);
+  background: var(--card);
+  color: var(--ink);
+  padding: 12px 16px;
+  font: 400 16px/1.55 var(--body);
+  resize: vertical;
+}
+.field textarea:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 4px rgb(10 111 194 / 18%);
+}
+.field .opt {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+}
+.flabel {
+  display: block;
+  font: 600 13px var(--body);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  margin-bottom: 7px;
+}
+.ann-row {
+  display: grid;
+  grid-template-columns: 72px 1fr auto auto;
+  gap: 18px;
+  align-items: center;
+  padding: 14px 0;
+  border-top: 1px solid var(--rule);
+}
+.ann-row img,
+.ann-ph {
+  width: 72px;
+  height: 52px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: var(--mute-t);
+}
+.ann-t b {
+  display: block;
+  font-weight: 600;
+}
+.ann-t small,
+.ann-s small {
+  color: var(--ink-2);
+  font-size: 14px;
+}
+.ann-s {
+  display: grid;
+  justify-items: end;
+}
+.ann-back {
+  margin: -4px 0 4px;
+}
+.ann-back .link svg {
+  width: 18px;
+  height: 18px;
+  margin-right: 6px;
+}
+.ann-edit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  gap: 24px;
+  align-items: start;
+}
+.ann-form h2 {
+  font-size: 28px;
+}
+.ann-form h3 {
+  font: 600 13px var(--body);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--blue);
+  margin-top: 30px;
+  padding-top: 18px;
+  border-top: 1px solid var(--rule);
+}
+.ann-form .notice {
+  margin-top: 14px;
+}
+.ann-photos {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.ann-photos button {
+  width: 64px;
+  height: 48px;
+  border-radius: 10px;
+  overflow: hidden;
+  opacity: 0.7;
+  box-shadow: inset 0 0 0 1.5px var(--field);
+}
+.ann-photos button.none {
+  width: auto;
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.ann-photos button[aria-pressed='true'] {
+  opacity: 1;
+  box-shadow:
+    0 0 0 2px var(--card),
+    0 0 0 4px var(--blue);
+}
+.ann-photos img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.ann-aud {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 12px;
+  align-items: start;
+  margin-top: 26px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--mute-t);
+}
+.ann-aud svg {
+  margin-top: 2px;
+  color: var(--blue);
+}
+.ann-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  margin-top: 20px;
+}
+.ann-preview {
+  position: sticky;
+  top: 20px;
+  margin-top: 20px;
+}
+.ann-tabs {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.seg {
+  display: inline-flex;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--mute-t);
+}
+.seg button {
+  padding: 8px 14px;
+  border-radius: 9px;
+  font: 600 14px var(--body);
+  color: var(--ink-2);
+}
+.seg button[aria-pressed='true'] {
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgb(14 39 102 / 14%);
+}
+.ann-frame {
+  border-radius: 18px;
+  overflow: hidden;
+  background: #eef3fa;
+  box-shadow: var(--shadow);
+  margin: 0 auto;
+  transition: max-width 0.25s var(--ease);
+}
+.ann-frame.laptop {
+  max-width: 100%;
+}
+.ann-frame.phone {
+  max-width: 390px;
+}
+.ann-frame iframe.mail {
+  display: block;
+  width: 100%;
+  height: 900px;
+  border: 0;
+  background: #eef3fa;
+}
+.up-preview {
+  padding: 24px;
+  background: var(--canvas);
+}
+.ann-frame.laptop .up-preview .up-card {
+  grid-template-columns: 1.1fr 1fr;
+  grid-template-rows: none;
+}
+.ann-frame.laptop .up-preview .up-img {
+  aspect-ratio: auto;
+  min-height: 260px;
+}
+
 /* ---------- share dialog ---------- */
 .share-bd {
   position: fixed;
@@ -1649,6 +1935,40 @@ html[data-mode='dark'] .share .x {
   }
   .site {
     position: relative;
+  }
+}
+@media (max-width: 1180px) {
+  .ann-edit {
+    grid-template-columns: 1fr;
+  }
+  .ann-preview {
+    position: static;
+  }
+}
+@media (max-width: 760px) {
+  .up-list.one .up-card {
+    grid-template-columns: 1fr;
+  }
+  .up-list.one .up-img {
+    min-height: 0;
+    aspect-ratio: 16 / 9;
+  }
+  .up-list.one .up-body {
+    padding: 26px 24px 28px;
+  }
+  .upcoming {
+    padding-top: 80px;
+  }
+  .ann-row {
+    grid-template-columns: 56px 1fr;
+  }
+  .ann-row img,
+  .ann-ph {
+    width: 56px;
+    height: 44px;
+  }
+  .ann-s {
+    justify-items: start;
   }
 }
 @media (max-width: 760px) {

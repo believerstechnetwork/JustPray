@@ -23,10 +23,43 @@ export interface BankDetails {
 /** One account per currency; null when that account is not set up. */
 export type Banks = Record<Currency, BankDetails | null>;
 
+/** Another BTN event, as listed on the site. */
+export interface UpcomingEvent {
+  id: number;
+  title: string;
+  date: string;
+  endDate: string | null;
+  time: string | null;
+  venue: string;
+  summary: string;
+  imageUrl: string | null;
+  linkUrl: string | null;
+  linkLabel: string | null;
+}
+
+/** An announcement as the organisers edit it. */
+export interface Announcement extends Omit<UpcomingEvent, 'id'> {
+  id: number;
+  subject: string;
+  message: string;
+  status: 'draft' | 'published';
+  publishedAt: string | null;
+  sentCount: number;
+  recipients: number;
+  createdAt: string;
+}
+
+export type AnnouncementForm = Omit<
+  Announcement,
+  'id' | 'status' | 'publishedAt' | 'sentCount' | 'recipients' | 'createdAt'
+>;
+
 export interface PublicInfo {
   event: GatheringEvent | null;
   reserved: number;
   banks: Banks;
+  /** Other BTN events coming up, soonest first. */
+  upcoming: UpcomingEvent[];
 }
 
 /** A reservation made during this visit. */

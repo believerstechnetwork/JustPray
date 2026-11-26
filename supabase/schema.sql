@@ -68,6 +68,39 @@ alter table public.reservations add column if not exists email_failed_at timesta
 create unique index if not exists reservations_cancel_hash
   on public.reservations (cancel_hash) where cancel_hash is not null;
 
+-- Other BTN events (not Just Pray gatherings), announced by email and listed on the site.
+create table if not exists public.announcements (
+  id bigint generated always as identity primary key,
+  title text not null,
+  date date not null,
+  end_date date,
+  time text,
+  venue text not null,
+  summary text not null,
+  image_url text,
+  link_url text,
+  link_label text,
+  subject text not null,
+  message text not null,
+  status text not null default 'draft' check (status in ('draft', 'published')),
+  published_at timestamptz,
+  sent_count integer not null default 0,
+  recipients integer not null default 0,
+  created_at timestamptz not null default now()
+);
+
+-- People who unsubscribed from announcements. They are never emailed one again.
+create table if not exists public.unsubscribes (
+  id bigint generated always as identity primary key,
+  email text not null unique,
+  created_at timestamptz not null default now()
+);
+
+alter table public.announcements enable row level security;
+alter table public.unsubscribes enable row level security;
+revoke all on public.announcements, public.unsubscribes from anon, authenticated;
+grant all on public.announcements, public.unsubscribes to service_role;
+
 alter table public.events enable row level security;
 alter table public.reservations enable row level security;
 alter table public.contributions enable row level security;

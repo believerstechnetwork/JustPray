@@ -1,4 +1,6 @@
 import type {
+  AnnouncementFields,
+  AnnouncementRecord,
   CancelLookup,
   ContributionRecord,
   ContributionStatus,
@@ -29,6 +31,9 @@ export class MemoryDb implements Db {
   event: EventDetails | null;
   reservations: StoredReservation[] = [];
   contributions: ContributionRecord[] = [];
+  announcements: AnnouncementRecord[] = [];
+  /** Emails that unsubscribed from announcements. */
+  unsubscribed = new Set<string>();
   private nextId = 1;
   private readonly now: () => Date;
 
@@ -180,6 +185,63 @@ export class MemoryDb implements Db {
 
   async listContributions(): Promise<ContributionRecord[]> {
     return [...this.contributions].reverse().map((c) => ({ ...c }));
+  }
+
+  async listAnnouncements(): Promise<AnnouncementRecord[]> {
+    return [...this.announcements].reverse().map((a) => ({ ...a }));
+  }
+
+  async createAnnouncement(fields: AnnouncementFields): Promise<AnnouncementRecord> {
+    const a: AnnouncementRecord = {
+      ...fields,
+      id: this.nextId++,
+      status: 'draft',
+      publishedAt: null,
+      sentCount: 0,
+      recipients: 0,
+      createdAt: this.now().toISOString(),
+    };
+    this.announcements.push(a);
+    return { ...a };
+  }
+
+  async updateAnnouncement(
+    id: number,
+    fields: AnnouncementFields,
+  ): Promise<AnnouncementRecord | null> {
+    const a = this.announcements.find((x) => x.id === id);
+    if (!a) return null;
+    Object.assign(a, fields);
+    return { ...a };
+  }
+
+  async deleteDraftAnnouncement(id: number): Promise<boolean> {
+    const i = this.announcements.findIndex((x) => x.id === id && x.status === 'draft');
+    if (i < 0) return false;
+    this.announcements.splice(i, 1);
+    return true;
+  }
+
+  async publishAnnouncement(id: number, recipients: number): Promise<AnnouncementRecord | null> {
+    const a = this.announcements.find((x) => x.id === id);
+    if (!a || a.status !== 'draft') return null;
+    Object.assign(a, { status: 'published', publishedAt: this.now().toISOString(), recipients });
+    return { ...a };
+  }
+
+  async upcomingAnnouncements(todayIso: string, limit: number): Promise<AnnouncementRecord[]> {
+    return this.announcements
+      .filter((a) => a.status === 'published' && (a.endDate ?? a.date) >= todayIso)
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .slice(0, limit)
+      .map((a) => ({ ...a }));
+  }
+
+  async updatesAudience(): Promise<{ name: string; email: string }[]> {
+    const seen = new Map<string, string>();
+    for (const r of this.reservations)
+      if (r.updates && !this.unsubscribed.has(r.email)) seen.set(r.email, r.name);
+    return [...seen].map(([email, name]) => ({ name, email }));
   }
 
   async ping(): Promise<void> {}

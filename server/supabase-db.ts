@@ -1,5 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type {
+  AnnouncementFields,
+  AnnouncementRecord,
   CancelLookup,
   ContributionRecord,
   ContributionStatus,
@@ -65,6 +67,42 @@ const toContribution = (r: Row): ContributionRecord => ({
   markedSentAt: opt(r.marked_sent_at),
   reviewedAt: opt(r.reviewed_at),
   createdAt: s(r.created_at),
+});
+
+const optStr = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null);
+
+const toAnnouncement = (r: Row): AnnouncementRecord => ({
+  id: n(r.id),
+  title: s(r.title),
+  date: s(r.date),
+  endDate: optStr(r.end_date),
+  time: optStr(r.time),
+  venue: s(r.venue),
+  summary: s(r.summary),
+  imageUrl: optStr(r.image_url),
+  linkUrl: optStr(r.link_url),
+  linkLabel: optStr(r.link_label),
+  subject: s(r.subject),
+  message: s(r.message),
+  status: r.status === 'published' ? 'published' : 'draft',
+  publishedAt: opt(r.published_at),
+  sentCount: n(r.sent_count),
+  recipients: n(r.recipients),
+  createdAt: s(r.created_at),
+});
+
+const announcementRow = (f: AnnouncementFields) => ({
+  title: f.title,
+  date: f.date,
+  end_date: f.endDate,
+  time: f.time,
+  venue: f.venue,
+  summary: f.summary,
+  image_url: f.imageUrl,
+  link_url: f.linkUrl,
+  link_label: f.linkLabel,
+  subject: f.subject,
+  message: f.message,
 });
 
 function check<T>(res: { data: T; error: { message: string; code?: string } | null }): T {
@@ -319,6 +357,94 @@ export class SupabaseDb implements Db {
     return rows
       .map(toContribution)
       .sort((a, b) => time(b.createdAt) - time(a.createdAt) || b.id - a.id);
+  }
+
+  async listAnnouncements(): Promise<AnnouncementRecord[]> {
+    const rows = await this.all('id', (after) =>
+      this.sb
+        .from('announcements')
+        .select('*')
+        .gt('id', after)
+        .order('id', { ascending: true })
+        .limit(PAGE),
+    );
+    return rows.map(toAnnouncement).reverse();
+  }
+
+  async createAnnouncement(fields: AnnouncementFields): Promise<AnnouncementRecord> {
+    const row = check(
+      await this.sb.from('announcements').insert(announcementRow(fields)).select().single(),
+    ) as Row;
+    return toAnnouncement(row);
+  }
+
+  async updateAnnouncement(
+    id: number,
+    fields: AnnouncementFields,
+  ): Promise<AnnouncementRecord | null> {
+    const rows = check(
+      await this.sb.from('announcements').update(announcementRow(fields)).eq('id', id).select(),
+    ) as Row[];
+    return rows[0] ? toAnnouncement(rows[0]) : null;
+  }
+
+  async deleteDraftAnnouncement(id: number): Promise<boolean> {
+    const rows = check(
+      await this.sb.from('announcements').delete().eq('id', id).eq('status', 'draft').select('id'),
+    ) as Row[];
+    return rows.length > 0;
+  }
+
+  async publishAnnouncement(id: number, recipients: number): Promise<AnnouncementRecord | null> {
+    // Conditional on still being a draft, so two presses publish (and send) once.
+    const rows = check(
+      await this.sb
+        .from('announcements')
+        .update({ status: 'published', published_at: new Date().toISOString(), recipients })
+        .eq('id', id)
+        .eq('status', 'draft')
+        .select(),
+    ) as Row[];
+    return rows[0] ? toAnnouncement(rows[0]) : null;
+  }
+
+  async upcomingAnnouncements(todayIso: string, limit: number): Promise<AnnouncementRecord[]> {
+    const rows = check(
+      await this.sb
+        .from('announcements')
+        .select('*')
+        .eq('status', 'published')
+        .or(`end_date.gte.${todayIso},and(end_date.is.null,date.gte.${todayIso})`)
+        .order('date', { ascending: true })
+        .limit(limit),
+    ) as Row[];
+    return rows.map(toAnnouncement);
+  }
+
+  async updatesAudience(): Promise<{ name: string; email: string }[]> {
+    const [rows, unsub] = await Promise.all([
+      this.all('id', (after) =>
+        this.sb
+          .from('reservations')
+          .select('id,name,email')
+          .eq('updates', true)
+          .gt('id', after)
+          .order('id', { ascending: true })
+          .limit(PAGE),
+      ),
+      this.all('id', (after) =>
+        this.sb
+          .from('unsubscribes')
+          .select('id,email')
+          .gt('id', after)
+          .order('id', { ascending: true })
+          .limit(PAGE),
+      ),
+    ]);
+    const blocked = new Set(unsub.map((r) => s(r.email)));
+    const people = new Map<string, string>();
+    for (const r of rows) if (!blocked.has(s(r.email))) people.set(s(r.email), s(r.name));
+    return [...people].map(([email, name]) => ({ name, email }));
   }
 
   async ping(): Promise<void> {
