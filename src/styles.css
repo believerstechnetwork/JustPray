@@ -1518,8 +1518,13 @@ td.acts .btn + .btn {
   font-size: clamp(32px, 3.4vw, 44px);
   text-wrap: balance;
 }
-.upcoming .sec-h:focus {
+/* Focused by the header's Events link: keyboard users see the ring, mouse users do not. */
+.upcoming .sec-h:focus:not(:focus-visible) {
   outline: none;
+}
+.upcoming .sec-h:focus-visible {
+  outline-offset: 6px;
+  border-radius: 6px;
 }
 .up-h p {
   color: var(--ink-2);
