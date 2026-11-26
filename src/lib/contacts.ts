@@ -1,6 +1,8 @@
 /* Reading a list of people from a spreadsheet: an Excel file (read with read-excel-file, loaded
    only when an organiser imports) or a CSV. Pure functions, so they are easy to test. */
 
+import type { ImportOutcome } from '../data/types';
+
 export interface Contact {
   name: string;
   email: string;
@@ -175,6 +177,36 @@ export function importBatches(people: Contact[], maxChars = IMPORT_BATCH_CHARS):
   }
   if (batch.length) batches.push(batch);
   return batches;
+}
+
+/** How much of a list is saved: the first `done` people, with the counts the server gave them. */
+export interface ImportProgress {
+  done: number;
+  counts: ImportOutcome;
+}
+
+export const startImport = (): ImportProgress => ({
+  done: 0,
+  counts: { added: 0, existing: 0, unsubscribed: 0, invalid: 0 },
+});
+
+/** Send the people after `progress.done` in batches, adding each saved batch to `progress` as it
+ *  is saved. If a batch fails, the error is thrown and `progress` still says what was saved, so
+ *  calling again with it sends only the rest and the counts are never lost or doubled. */
+export async function importInBatches(
+  people: Contact[],
+  progress: ImportProgress,
+  send: (batch: Contact[]) => Promise<ImportOutcome>,
+  maxChars = IMPORT_BATCH_CHARS,
+): Promise<void> {
+  for (const batch of importBatches(people.slice(progress.done), maxChars)) {
+    const r = await send(batch);
+    progress.counts.added += r.added;
+    progress.counts.existing += r.existing;
+    progress.counts.unsubscribed += r.unsubscribed;
+    progress.counts.invalid += r.invalid;
+    progress.done += batch.length;
+  }
 }
 
 export async function readContactsFile(file: File): Promise<ParsedList> {

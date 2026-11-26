@@ -16,7 +16,7 @@ import {
 } from './state';
 import { previewInner } from './views/announcements';
 import { unsubscribe } from './views/unsubscribe';
-import { MAX_IMPORT_PEOPLE, importBatches, readContactsFile } from './lib/contacts';
+import { MAX_IMPORT_PEOPLE, importInBatches, readContactsFile, startImport } from './lib/contacts';
 import { admin } from './views/admin';
 import { cancel } from './views/cancel';
 import { confirmed } from './views/confirmed';
@@ -251,6 +251,7 @@ async function readImportFile(input: HTMLInputElement): Promise<void> {
         file: file.name,
         ...parsed,
         label: file.name.replace(/\.(xlsx|csv)$/i, ''),
+        progress: null,
         result: null,
       };
       if (!parsed.contacts.length)
@@ -271,7 +272,8 @@ async function readImportFile(input: HTMLInputElement): Promise<void> {
 async function submitImport(data: FormData): Promise<void> {
   const im = S.ann.importing;
   if (!im || S.busy) return;
-  im.label = String(data.get('label') ?? '').trim();
+  // The label is fixed once part of the list is saved, so every batch carries the same one.
+  if (!im.progress) im.label = String(data.get('label') ?? '').trim();
   if (im.contacts.length > MAX_IMPORT_PEOPLE) {
     S.ann.error = `Import up to ${MAX_IMPORT_PEOPLE.toLocaleString('en-GB')} people at a time. Split the sheet and import each part.`;
     return render();
@@ -279,21 +281,27 @@ async function submitImport(data: FormData): Promise<void> {
   S.busy = true;
   S.ann.error = '';
   render();
+  // Sent in batches small enough for any request, however long or unusual the names are; the
+  // counts add up to one result. If a batch fails, the batches before it stay saved and counted,
+  // and pressing Import again sends only the rest.
+  const progress = im.progress ?? startImport();
+  im.progress = progress;
+  const label = im.label || im.file;
   try {
-    // Sent in batches small enough for any request, however long or unusual the names are; the
-    // counts add up to one result.
-    const total = { added: 0, existing: 0, unsubscribed: 0, invalid: 0 };
-    for (const batch of importBatches(im.contacts)) {
-      const r = await api.importContacts(batch, im.label || im.file);
-      total.added += r.added;
-      total.existing += r.existing;
-      total.unsubscribed += r.unsubscribed;
-      total.invalid += r.invalid;
-    }
-    im.result = total;
+    await importInBatches(im.contacts, progress, (batch) => api.importContacts(batch, label));
+    im.result = progress.counts;
+    im.progress = null;
     void loadAnnouncements();
   } catch (e) {
-    S.ann.error = errorMessage(e);
+    if (progress.done) {
+      const n = progress.done.toLocaleString('en-GB');
+      const of = im.contacts.length.toLocaleString('en-GB');
+      S.ann.error = `${n} of ${of} people were saved, then the import stopped. ${errorMessage(e)} Press Import again to send the rest; nobody is added twice.`;
+      void loadAnnouncements();
+    } else {
+      im.progress = null;
+      S.ann.error = errorMessage(e);
+    }
   }
   S.busy = false;
   render();

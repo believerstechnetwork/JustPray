@@ -201,12 +201,13 @@ function importPanel(): string {
         `<tr><td data-label="Name">${esc(c.name || '–')}</td><td data-label="Email">${esc(c.email)}</td></tr>`,
     )
     .join('');
+  const saved = im.progress?.done ?? 0;
   return `${back}<form class="block imp" data-form="import"><h2>Check the list</h2>
   <p><b>${esc(im.file)}</b>: ${people(im.contacts.length)} with a valid email${im.duplicates ? `, ${im.duplicates} repeated ${im.duplicates === 1 ? 'row' : 'rows'} counted once` : ''}${im.invalid ? `, ${im.invalid} ${im.invalid === 1 ? 'row' : 'rows'} without a valid email left out` : ''}.</p>
   ${im.contacts.length ? `<div class="tw"><table class="cards"><thead><tr><th>Name</th><th>Email</th></tr></thead><tbody>${sample}</tbody></table></div>${im.contacts.length > 6 ? `<p class="fine">and ${people(im.contacts.length - 6)} more.</p>` : ''}` : ''}
-  <div class="field"><label for="imp-label">Label for this list</label><input id="imp-label" name="label" maxlength="80" value="${esc(im.label)}" placeholder="BTN Conference 2026 attendees"><span class="hint">Shown in the mailing list as where these people came from.</span></div>
+  <div class="field"><label for="imp-label">Label for this list</label><input id="imp-label" name="label" maxlength="80" value="${esc(im.label)}" placeholder="BTN Conference 2026 attendees"${saved ? ' readonly' : ''}><span class="hint">${saved ? 'Kept for the rest, so the whole list has one label.' : 'Shown in the mailing list as where these people came from.'}</span></div>
   ${S.ann.error ? `<p class="err" role="alert">${esc(S.ann.error)}</p>` : ''}
-  <div class="ann-actions"><button class="btn ind" type="submit"${S.busy || !im.contacts.length ? ' disabled' : ''}>${S.busy ? 'Importing…' : `Import ${people(im.contacts.length)}`}</button><button class="link" type="button" data-action="ann-import">Choose another file</button></div></form>`;
+  <div class="ann-actions"><button class="btn ind" type="submit"${S.busy || !im.contacts.length ? ' disabled' : ''}>${S.busy ? 'Importing…' : saved ? `Import the other ${people(im.contacts.length - saved)}` : `Import ${people(im.contacts.length)}`}</button><button class="link" type="button" data-action="ann-import">Choose another file</button></div></form>`;
 }
 
 function list(): string {

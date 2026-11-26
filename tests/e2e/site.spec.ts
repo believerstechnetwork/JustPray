@@ -348,6 +348,61 @@ test('organiser imports people from a CSV file and sees them on the mailing list
   await expect(row).toContainText(`Conference ${tag}`);
 });
 
+test('an import that stops part way keeps what it saved, and Import again sends the rest', async ({
+  page,
+}) => {
+  const tag = Math.random().toString(36).slice(2, 8);
+  // Long names and addresses, so the list needs more than one request.
+  const rows = Array.from(
+    { length: 5000 },
+    (_, i) => `${'N'.repeat(120)},${tag}${i}${'x'.repeat(220)}@example.com`,
+  );
+  await signIn(page);
+  await page.getByRole('button', { name: 'Announcements', exact: true }).click();
+  await page.getByRole('button', { name: 'Import from Excel' }).click();
+  await page.locator('#imp-file').setInputFiles({
+    name: 'big.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from(`Name,Email\n${rows.join('\n')}\n`),
+  });
+  await expect(page.getByText('5,000 people with a valid email')).toBeVisible();
+
+  // The import requests are answered here, so the shared test server keeps none of these people.
+  // The first request is saved; the second is lost; after that every request is saved.
+  let requests = 0;
+  const sentEmails: string[] = [];
+  await page.route('**/api/admin/contacts/import', async (route) => {
+    if (++requests === 2) return route.abort();
+    const batch = (route.request().postDataJSON() as { people: { email: string }[] }).people;
+    sentEmails.push(...batch.map((p) => p.email));
+    await route.fulfill({
+      json: { added: batch.length, existing: 0, unsubscribed: 0, invalid: 0 },
+    });
+  });
+  await page.getByRole('button', { name: 'Import 5,000 people' }).click();
+  const err = page.locator('form[data-form="import"] .err');
+  await expect(err).toContainText('people were saved, then the import stopped');
+  const saved = Number(
+    (await err.textContent())?.match(/^([\d,]+) of 5,000/)?.[1]?.replace(/,/g, ''),
+  );
+  expect(saved).toBeGreaterThan(0);
+  expect(saved).toBeLessThan(5000);
+  await expect(page.getByLabel('Label for this list')).toHaveAttribute('readonly', '');
+
+  // Import again sends only the rest; the result counts everyone as added, none as already there.
+  await page
+    .getByRole('button', {
+      name: `Import the other ${(5000 - saved).toLocaleString('en-GB')} people`,
+    })
+    .click();
+  await expect(page.getByRole('heading', { name: 'Import complete' })).toBeVisible();
+  await expect(page.locator('.imp-sum')).toContainText('5,000 added to the mailing list');
+  await expect(page.locator('.imp-sum')).not.toContainText('already on the list');
+  // Everyone was sent exactly once, in order.
+  expect(sentEmails).toEqual(rows.map((r) => r.split(',')[1]));
+  await page.unroute('**/api/admin/contacts/import');
+});
+
 test('organiser previews, tests and publishes an announcement that then shows on the home page', async ({
   page,
 }) => {

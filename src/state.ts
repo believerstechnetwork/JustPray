@@ -13,6 +13,7 @@ import type {
   ImportOutcome,
   Reservation,
 } from './data/types';
+import type { ImportProgress } from './lib/contacts';
 
 export type Route =
   'home' | 'register' | 'confirmed' | 'support' | 'admin' | 'cancel' | 'unsubscribe';
@@ -89,6 +90,8 @@ export interface UiState {
       invalid: number;
       duplicates: number;
       label: string;
+      /** Set once a batch is saved: what is saved so far, so a retry sends only the rest. */
+      progress: ImportProgress | null;
       result: ImportOutcome | null;
     } | null;
     /** 'new', an announcement id, or null for the list. */

@@ -5,7 +5,13 @@ import { createSession } from '../../server/auth';
 import { GmailMailer, MemoryMailer, ResendMailer } from '../../server/mailer';
 import { MemoryDb } from '../../server/memory-db';
 import { processOutbox } from '../../server/outbox';
-import { importBatches, parseCsv, rowsToContacts } from '../../src/lib/contacts';
+import {
+  importBatches,
+  importInBatches,
+  parseCsv,
+  rowsToContacts,
+  startImport,
+} from '../../src/lib/contacts';
 import { dateBlock, upcomingCard } from '../../src/views/announcements';
 
 const EVENT = {
@@ -277,6 +283,60 @@ describe('importing people', () => {
       added += data.added as number;
     }
     expect(added).toBe(5000);
+  });
+
+  it('keeps what a failed batch import saved, and a retry sends only the rest', async () => {
+    const people = Array.from({ length: 30 }, (_, i) => ({
+      name: `Person ${i}`,
+      email: `p${i}@example.com`,
+    }));
+    const send = async (batch: typeof people) => {
+      const { status, data } = await call('POST', '/api/admin/contacts/import', {
+        label: 'Retry',
+        people: batch,
+      });
+      if (status !== 200) throw new Error(`HTTP ${status}`);
+      return data as { added: number; existing: number; unsubscribed: number; invalid: number };
+    };
+    const maxChars = 400; // about 10 people a batch
+    expect(importBatches(people, maxChars).length).toBeGreaterThanOrEqual(3);
+
+    // The second batch fails after the first is saved.
+    const progress = startImport();
+    const sent: number[] = [];
+    let calls = 0;
+    const failSecond = async (batch: typeof people) => {
+      if (++calls === 2) throw new Error('network');
+      sent.push(batch.length);
+      return send(batch);
+    };
+    await expect(importInBatches(people, progress, failSecond, maxChars)).rejects.toThrow(
+      'network',
+    );
+    expect(progress.done).toBe(sent[0]);
+    expect(progress.counts).toEqual({
+      added: sent[0],
+      existing: 0,
+      unsubscribed: 0,
+      invalid: 0,
+    });
+
+    // The retry starts after the saved people, so nobody is counted as already on the list.
+    const retried: string[] = [];
+    await importInBatches(
+      people,
+      progress,
+      (batch) => {
+        retried.push(...batch.map((p) => p.email));
+        return send(batch);
+      },
+      maxChars,
+    );
+    expect(retried).toEqual(people.slice(sent[0]).map((p) => p.email));
+    expect(progress).toEqual({
+      done: 30,
+      counts: { added: 30, existing: 0, unsubscribed: 0, invalid: 0 },
+    });
   });
 
   it('needs a signed-in organiser and refuses an empty list', async () => {
