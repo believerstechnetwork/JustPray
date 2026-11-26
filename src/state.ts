@@ -29,7 +29,7 @@ export interface UiState {
   busy: boolean;
   /** Reservation made during this visit. */
   /** Name and email typed on the home page, carried to the Reserve form. */
-  draft: { name: string; email: string };
+  draft: { name: string; email: string } | null;
   attendee: Reservation | null;
   attendeeEmailed: boolean;
   registerErrors: Partial<Record<string, string>>;
@@ -59,7 +59,7 @@ export const S: UiState = {
   banks: { NGN: null, USD: null },
   bank: null,
   busy: false,
-  draft: { name: '', email: '' },
+  draft: null,
   attendee: null,
   attendeeEmailed: false,
   registerErrors: {},

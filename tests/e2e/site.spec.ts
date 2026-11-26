@@ -54,6 +54,24 @@ test('all page images load', async ({ page }) => {
   expect(broken).toEqual([]);
 });
 
+test('the home-page slip fills the Reserve form, even after an earlier booking', async ({
+  page,
+}) => {
+  // Book once in this visit.
+  await page.goto('/#/register');
+  await fillRegistration(page);
+  await page.getByRole('button', { name: 'Reserve my seat' }).click();
+  await expect(page).toHaveURL(/#\/confirmed$/);
+
+  // A new entry on the home page wins as a whole, including a blank email.
+  await page.getByRole('button', { name: 'Back to home' }).click();
+  await page.locator('.slip').getByLabel('Your name').fill('Bola Ade');
+  await page.locator('.slip').getByRole('button', { name: 'Continue' }).click();
+  await expect(page).toHaveURL(/#\/register$/);
+  await expect(page.getByLabel('Full name *')).toHaveValue('Bola Ade');
+  await expect(page.getByLabel('Email *')).toHaveValue('');
+});
+
 test('reserving a seat shows the pass and updates the seat count', async ({ page }) => {
   const before = await seatCount(page);
   await page.getByRole('button', { name: 'Reserve a seat' }).first().click();

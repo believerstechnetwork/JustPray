@@ -299,7 +299,7 @@ async function submitRegister(data: FormData): Promise<void> {
     if (S.event) S.event.capacity = res.capacity;
     if (res.status === 'created') {
       // The home-page entry has been used; it must not refill the form later.
-      S.draft = { name: '', email: '' };
+      S.draft = null;
       S.attendee = res.reservation;
       S.attendeeEmailed = res.emailQueued;
       S.busy = false;

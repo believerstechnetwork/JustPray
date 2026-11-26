@@ -17,9 +17,10 @@ export function register(): string {
   const full = ready() && seatsLeft() <= 0;
   const closed = S.load === 'ready' && !S.event;
   const e = S.event;
-  // A new entry from the home page wins; otherwise fall back to this visit's booking.
-  const name = S.draft.name || a?.name || '';
-  const email = S.draft.email || a?.email || '';
+  // A new home-page entry wins as a whole, blank fields included; without one, this
+  // visit's booking fills the form.
+  const name = S.draft ? S.draft.name : (a?.name ?? '');
+  const email = S.draft ? S.draft.email : (a?.email ?? '');
   const panel = closed
     ? `<div class="panel"><h2>Reservations open soon.</h2><p>The next gathering hasn’t been announced yet. Please check back soon.</p></div>`
     : full

@@ -28,8 +28,8 @@ function dateTag(): string {
  *  Reserve page, which asks for the WhatsApp number and consent. */
 const slip = (): string =>
   `<form class="slip" data-form="quick" aria-labelledby="slip-h"><h2 id="slip-h">Reserve your seat</h2>
-  <div class="field"><label for="qn">Your name</label><input id="qn" name="fullName" autocomplete="name" value="${esc(S.draft.name)}"></div>
-  <div class="field"><label for="qe">Email</label><input id="qe" name="email" type="email" autocomplete="email" placeholder="you@example.com" value="${esc(S.draft.email)}"></div>
+  <div class="field"><label for="qn">Your name</label><input id="qn" name="fullName" autocomplete="name" value="${esc(S.draft?.name ?? '')}"></div>
+  <div class="field"><label for="qe">Email</label><input id="qe" name="email" type="email" autocomplete="email" placeholder="you@example.com" value="${esc(S.draft?.email ?? '')}"></div>
   <button class="btn gold" type="submit">Continue ${ICON.arrow}</button></form>`;
 
 export function home(): string {
