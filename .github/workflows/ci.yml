@@ -107,16 +107,43 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  db:
+    name: Database (PostgreSQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      # The live schema, to test upgrading from it.
+      - name: Fetch main
+        run: git fetch --depth=1 origin main:refs/remotes/origin/main || true
+      - name: Run schema.sql and check its rules
+        run: bash tests/db/schema.test.sh
+
   # Single required check for branch protection: it passes only when every job above passed.
   ci-pass:
     name: CI passed
     if: ${{ always() }}
-    needs: [lint, unit, build, e2e]
+    needs: [lint, unit, build, e2e, db]
     runs-on: ubuntu-latest
     steps:
       - name: Check results of required jobs
         run: |
-          echo "lint=${{ needs.lint.result }} unit=${{ needs.unit.result }} build=${{ needs.build.result }} e2e=${{ needs.e2e.result }}"
+          echo "lint=${{ needs.lint.result }} unit=${{ needs.unit.result }} build=${{ needs.build.result }} e2e=${{ needs.e2e.result }} db=${{ needs.db.result }}"
           if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}" = "true" ]; then
             echo "One or more required jobs did not succeed."
             exit 1

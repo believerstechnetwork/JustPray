@@ -80,11 +80,14 @@ npm run dev
 | `npm run check`        | Everything CI runs, except end-to-end tests                       |
 | `npm test`             | Unit tests (Vitest)                                               |
 | `npm run test:e2e`     | End-to-end tests (Playwright, desktop and mobile Chromium)        |
+| `npm run test:db`      | Runs `schema.sql` on a real PostgreSQL and checks its rules       |
 | `npm run lint`         | ESLint                                                            |
 | `npm run format`       | Prettier (use `format:check` to verify)                           |
 | `npm run check:assets` | Fails if an image in `src/assets` is over the size budget (1.2MB) |
 
-For end-to-end tests, install the browser once with `npx playwright install chromium`.
+For end-to-end tests, install the browser once with `npx playwright install chromium`. The
+database tests need PostgreSQL (16 or later) and `psql`; they create and drop a scratch database
+using the usual `PGHOST`, `PGUSER` and `PGPASSWORD` settings, so never point them at Supabase.
 
 ## Local development
 
@@ -121,6 +124,7 @@ supabase/
 tests/
   unit/            Vitest (API, storage mapping, validation, formatting)
   e2e/             Playwright, against the in-memory backend
+  db/              schema.sql on a real PostgreSQL (npm run test:db)
 ```
 
 ## Continuous integration
@@ -133,6 +137,7 @@ tests/
 | Unit tests              | Vitest                                                  |
 | Build                   | Image size budget, production build (uploads `dist`)    |
 | End-to-end (Playwright) | Desktop and mobile flows; uploads the report on failure |
+| Database (PostgreSQL)   | `schema.sql` on PostgreSQL 16: reruns, sends, imports   |
 | **CI passed**           | Gate job that is green only when all of the above are   |
 
 New pushes to a PR cancel its older runs. To require CI before merging, add a branch protection rule
