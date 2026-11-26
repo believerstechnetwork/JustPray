@@ -66,6 +66,8 @@ test('reserving a seat shows the pass and updates the seat count', async ({ page
   await expect(page.getByRole('heading', { level: 1 })).toHaveText("You're in, Ada.");
   await expect(page.getByText(/^JP-\d{4}$/)).toBeVisible();
   await expect(page.getByText(`We've emailed your confirmation to ${email}`)).toBeVisible();
+  // The seat lights live on the home page; the new booking is counted there.
+  await page.getByRole('button', { name: 'Back to home' }).click();
   expect(await seatCount(page)).toBeGreaterThan(before);
 });
 
@@ -147,7 +149,7 @@ test('share dialog opens, generates an image and closes with Escape', async ({
     await page.getByRole('button', { name: 'Menu' }).click();
     await page.locator('#mnav').getByRole('button', { name: 'Share' }).click();
   } else {
-    await page.locator('.nav').getByRole('button', { name: 'Share', exact: true }).click();
+    await page.locator('.footer').getByRole('button', { name: 'Share', exact: true }).click();
   }
   const dialog = page.getByRole('dialog', { name: 'Share Just Pray' });
   await expect(dialog).toBeVisible();

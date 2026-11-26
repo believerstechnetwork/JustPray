@@ -166,14 +166,15 @@ function setCurrency(currency: Currency): void {
 }
 
 async function copy(button: HTMLElement): Promise<void> {
-  const label = button.textContent;
+  const hint = button.querySelector<HTMLElement>('.copyhint') ?? button;
+  const label = hint.textContent;
   try {
     await navigator.clipboard.writeText(button.dataset.copy ?? '');
-    button.textContent = 'Copied';
+    hint.textContent = 'Copied';
   } catch {
-    button.textContent = 'Select and copy';
+    hint.textContent = 'Select and copy';
   }
-  setTimeout(() => (button.textContent = label), 1600);
+  setTimeout(() => (hint.textContent = label), 1600);
 }
 
 async function setContribution(id: number, status: string): Promise<void> {
@@ -394,6 +395,17 @@ document.addEventListener('submit', (e) => {
   e.preventDefault();
   if (S.busy) return;
   const data = new FormData(form);
+  if (kind === 'quick') {
+    // First step from the home page: carry what was typed to the Reserve form.
+    S.draft = {
+      name: String(data.get('fullName') ?? '').trim(),
+      email: String(data.get('email') ?? '').trim(),
+    };
+    go('register');
+    // The name and email are filled in; the next field to complete is WhatsApp.
+    setTimeout(() => document.getElementById('p')?.focus(), 60);
+    return;
+  }
   if (kind === 'register') void submitRegister(data);
   else if (kind === 'support') void submitSupport(data);
   else if (kind === 'event') void submitEvent(data);
