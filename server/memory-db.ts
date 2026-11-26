@@ -47,7 +47,8 @@ export class MemoryDb implements Db {
     name: string;
     email: string;
     unsubToken: string;
-    status: 'pending' | 'sending' | 'sent' | 'failed' | 'skipped';
+    status: 'pending' | 'claimed' | 'sending' | 'sent' | 'failed' | 'skipped';
+    claimToken: string | null;
     attempts: number;
     claimedAt: number;
     sentAt: number | null;
@@ -271,6 +272,7 @@ export class MemoryDb implements Db {
         sentAt: null,
         finishedAt: null,
         error: null,
+        claimToken: null,
       });
     Object.assign(a, {
       publishedAt: this.now().toISOString(),
@@ -282,8 +284,13 @@ export class MemoryDb implements Db {
 
   async claimOutbox(limit: number, dailyLimit: number) {
     const now = this.now().getTime();
-    // A claim older than 10 minutes belongs to a run that died, maybe after sending: close it as
-    // failed rather than risk sending twice.
+    // A claim older than 10 minutes that never started sending: nothing went out, so it goes back
+    // in the queue (its old token stops working).
+    for (const o of this.outbox)
+      if (o.status === 'claimed' && now - o.claimedAt > 10 * 60_000)
+        Object.assign(o, { status: 'pending', claimToken: null });
+    // A send that started more than 10 minutes ago belongs to a run that died, maybe after
+    // sending: close it as failed rather than risk sending twice.
     for (const o of this.outbox)
       if (o.status === 'sending' && now - o.claimedAt > 10 * 60_000)
         Object.assign(o, {
@@ -301,6 +308,7 @@ export class MemoryDb implements Db {
     const sentToday = this.outbox.filter(
       (o) =>
         (o.sentAt !== null && now - o.sentAt < day) ||
+        o.status === 'claimed' ||
         o.status === 'sending' ||
         (o.status === 'failed' && now - (o.finishedAt ?? o.claimedAt) < day),
     ).length;
@@ -310,14 +318,27 @@ export class MemoryDb implements Db {
       .filter((o) => o.status === 'pending')
       .sort((x, y) => x.attempts - y.attempts || x.id - y.id)
       .slice(0, n);
-    for (const o of claimed) Object.assign(o, { status: 'sending', claimedAt: now });
+    for (const o of claimed)
+      Object.assign(o, {
+        status: 'claimed',
+        claimedAt: now,
+        claimToken: randomBytes(12).toString('hex'),
+      });
     return claimed.map((o) => ({
       id: o.id,
       announcementId: o.announcementId,
       name: o.name,
       email: o.email,
       unsubToken: o.unsubToken,
+      claimToken: o.claimToken ?? '',
     }));
+  }
+
+  async beginOutbox(id: number, claimToken: string): Promise<boolean> {
+    const o = this.outbox.find((x) => x.id === id);
+    if (!o || o.status !== 'claimed' || o.claimToken !== claimToken) return false;
+    Object.assign(o, { status: 'sending', claimedAt: this.now().getTime() });
+    return true;
   }
 
   async isUnsubscribed(email: string): Promise<boolean> {
@@ -326,7 +347,7 @@ export class MemoryDb implements Db {
 
   async finishOutbox(id: number, outcome: OutboxOutcome, error?: string): Promise<void> {
     const o = this.outbox.find((x) => x.id === id);
-    if (!o || o.status !== 'sending') return;
+    if (!o || (o.status !== 'claimed' && o.status !== 'sending')) return;
     o.error = error ? error.slice(0, 200) : null;
     o.finishedAt = this.now().getTime();
     if (outcome === 'skipped') {

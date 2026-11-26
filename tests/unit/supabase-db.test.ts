@@ -361,7 +361,19 @@ describe('SupabaseDb', () => {
           { id: 5, title: 'T', date: '2027-09-09', status: 'published', audience: 'imported' },
         ],
       },
-      { body: [{ id: 9, announcement_id: 5, name: 'Ada', email: 'a@b.co', unsub_token: 'tok' }] },
+      {
+        body: [
+          {
+            id: 9,
+            announcement_id: 5,
+            name: 'Ada',
+            email: 'a@b.co',
+            unsub_token: 'tok',
+            claim_token: 'ct',
+          },
+        ],
+      },
+      { body: true },
       { body: null },
       { body: [{ added: 2, existing: 1, unsubscribed: 0 }] },
       { body: 'a@b.co' },
@@ -375,11 +387,23 @@ describe('SupabaseDb', () => {
       body: { p_id: 5, p_scope: 'imported' },
     });
     expect(await db.claimOutbox(20, 350)).toEqual([
-      { id: 9, announcementId: 5, name: 'Ada', email: 'a@b.co', unsubToken: 'tok' },
+      {
+        id: 9,
+        announcementId: 5,
+        name: 'Ada',
+        email: 'a@b.co',
+        unsubToken: 'tok',
+        claimToken: 'ct',
+      },
     ]);
     expect(seen[1]?.body).toEqual({ p_limit: 20, p_daily: 350 });
-    await db.finishOutbox(9, 'retry', 'smtp');
+    expect(await db.beginOutbox(9, 'ct')).toBe(true);
     expect(seen[2]).toMatchObject({
+      path: '/rest/v1/rpc/begin_announcement_send',
+      body: { p_id: 9, p_token: 'ct' },
+    });
+    await db.finishOutbox(9, 'retry', 'smtp');
+    expect(seen[3]).toMatchObject({
       path: '/rest/v1/rpc/finish_announcement_send',
       body: { p_id: 9, p_outcome: 'retry', p_error: 'smtp' },
     });
@@ -388,7 +412,7 @@ describe('SupabaseDb', () => {
       existing: 1,
       unsubscribed: 0,
     });
-    expect(seen[3]?.body).toEqual({ p_people: [{ name: 'A', email: 'a@b.co' }], p_label: 'Sheet' });
+    expect(seen[4]?.body).toEqual({ p_people: [{ name: 'A', email: 'a@b.co' }], p_label: 'Sheet' });
     expect(await db.unsubscribe('tok')).toBe('a@b.co');
   });
 

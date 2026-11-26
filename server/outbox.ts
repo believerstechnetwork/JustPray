@@ -21,7 +21,7 @@ export interface OutboxDeps {
   log?: (message: string, error?: unknown) => void;
 }
 
-type Result = 'sent' | 'failed' | 'skipped' | 'quota';
+type Result = 'sent' | 'failed' | 'skipped' | 'quota' | 'lost';
 
 export async function processOutbox(deps: OutboxDeps): Promise<{ sent: number; failed: number }> {
   const { db, mailer, limit, dailyLimit } = deps;
@@ -73,6 +73,20 @@ export async function processOutbox(deps: OutboxDeps): Promise<{ sent: number; f
       siteUrl: site,
       unsubscribeUrl,
     });
+    // Start sending, in one step that only the run holding the claim can take. A run that stalled
+    // past its claim (given back to the queue, or taken by another run) stops here.
+    try {
+      if (!(await db.beginOutbox(item.id, item.claimToken))) {
+        log(`Outbox item ${item.id} is no longer claimed by this run; not sending`);
+        return 'lost';
+      }
+    } catch (e) {
+      log(`Could not start outbox item ${item.id}; it will be tried again`, e);
+      await db
+        .finishOutbox(item.id, 'retry', 'Could not start sending')
+        .catch((err: unknown) => log(`Could not requeue outbox item ${item.id}`, err));
+      return 'failed';
+    }
     try {
       await mailer.send({
         ...email,

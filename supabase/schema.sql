@@ -96,6 +96,10 @@ create table if not exists public.announcements (
   created_at timestamptz not null default now()
 );
 alter table public.announcements add column if not exists email_content jsonb;
+-- Announcements published before the snapshot existed keep the email as it is now.
+update public.announcements a
+set email_content = to_jsonb(a) - 'email_content'
+where a.status = 'published' and a.email_content is null;
 
 -- People who unsubscribed from announcements. They are never emailed one again.
 create table if not exists public.unsubscribes (
@@ -122,10 +126,13 @@ create table if not exists public.announcement_sends (
   email text not null,
   -- Private token in this person's unsubscribe link.
   unsub_token text not null unique,
+  -- pending: queued; claimed: taken by a run, not yet being sent; sending: being sent now.
   status text not null default 'pending'
-    check (status in ('pending', 'sending', 'sent', 'failed', 'skipped')),
+    check (status in ('pending', 'claimed', 'sending', 'sent', 'failed', 'skipped')),
   attempts integer not null default 0,
   claimed_at timestamptz,
+  -- Proves which run holds a claim; only that run may start sending it.
+  claim_token text,
   sent_at timestamptz,
   -- When the last attempt ended (sent, failed or given up as stale).
   finished_at timestamptz,
@@ -133,6 +140,10 @@ create table if not exists public.announcement_sends (
   unique (announcement_id, email)
 );
 alter table public.announcement_sends add column if not exists finished_at timestamptz;
+alter table public.announcement_sends add column if not exists claim_token text;
+alter table public.announcement_sends drop constraint if exists announcement_sends_status_check;
+alter table public.announcement_sends add constraint announcement_sends_status_check
+  check (status in ('pending', 'claimed', 'sending', 'sent', 'failed', 'skipped'));
 create index if not exists announcement_sends_pending
   on public.announcement_sends (id) where status = 'pending';
 create index if not exists announcement_sends_sent_at
@@ -213,8 +224,13 @@ $$;
 
 -- Claim the next batch of queued emails, never more than p_daily sent (or being sent) in the
 -- last 24 hours. The lock makes overlapping runs take turns, so the daily limit holds.
+-- A claim is in two steps: claimed here, then switched to sending (begin_announcement_send) just
+-- before the email goes out, by the run holding the claim token.
+drop function if exists public.claim_announcement_sends(integer, integer);
 create or replace function public.claim_announcement_sends(p_limit integer, p_daily integer)
-returns table (id bigint, announcement_id bigint, name text, email text, unsub_token text)
+returns table (
+  id bigint, announcement_id bigint, name text, email text, unsub_token text, claim_token text
+)
 language plpgsql
 set search_path = public
 as $$
@@ -223,8 +239,13 @@ declare
   take integer;
 begin
   perform pg_advisory_xact_lock(727211);
-  -- A claim older than 10 minutes belongs to a run that died, maybe after the email went out.
-  -- Close it as failed rather than risk sending it twice.
+  -- A claim older than 10 minutes that never started sending: nothing went out, so it goes back
+  -- in the queue (its old token stops working).
+  update public.announcement_sends s
+  set status = 'pending', claim_token = null
+  where s.status = 'claimed' and s.claimed_at < now() - interval '10 minutes';
+  -- A send that started more than 10 minutes ago belongs to a run that died, maybe after the
+  -- email went out. Close it as failed rather than risk sending it twice.
   update public.announcement_sends s
   set status = 'failed', attempts = s.attempts + 1, error = 'Sending did not finish',
       finished_at = now()
@@ -234,18 +255,20 @@ begin
   set status = 'skipped'
   where s.status = 'pending'
     and exists (select 1 from public.unsubscribes u where u.email = s.email);
-  -- Emails being sent right now, and failed ones whose attempt ended in the last 24 hours (a run
-  -- that died or a timeout may still have delivered them), count toward today's limit too.
+  -- Emails claimed or being sent right now, and failed ones whose attempt ended in the last 24
+  -- hours (a run that died or a timeout may still have delivered them), count toward today's
+  -- limit too.
   select count(*) into sent_today
   from public.announcement_sends s
   where s.sent_at > now() - interval '24 hours'
-     or s.status = 'sending'
+     or s.status in ('claimed', 'sending')
      or (s.status = 'failed'
          and coalesce(s.finished_at, s.claimed_at) > now() - interval '24 hours');
   take := greatest(0, least(p_limit, p_daily - sent_today));
   return query
     update public.announcement_sends s
-    set status = 'sending', claimed_at = now()
+    set status = 'claimed', claimed_at = now(),
+        claim_token = md5(random()::text || clock_timestamp()::text || s.id::text)
     where s.id in (
       select s2.id from public.announcement_sends s2
       where s2.status = 'pending'
@@ -254,7 +277,23 @@ begin
       limit take
       for update skip locked
     )
-    returning s.id, s.announcement_id, s.name, s.email, s.unsub_token;
+    returning s.id, s.announcement_id, s.name, s.email, s.unsub_token, s.claim_token;
+end;
+$$;
+
+-- Start sending one claimed email: true only for the run that still holds the claim. A run that
+-- stalled past its claim (now back in the queue, or taken by another run) gets false and must
+-- not send.
+create or replace function public.begin_announcement_send(p_id bigint, p_token text)
+returns boolean
+language plpgsql
+set search_path = public
+as $$
+begin
+  update public.announcement_sends s
+  set status = 'sending', claimed_at = now()
+  where s.id = p_id and s.status = 'claimed' and s.claim_token = p_token;
+  return found;
 end;
 $$;
 
@@ -264,7 +303,7 @@ $$;
 --   failed   closed and never retried (it may have gone out, or can never go);
 --   skipped  closed unsent, because the person unsubscribed;
 --   later    not sent because the mail service's quota is used up: back in the queue, no attempt used.
--- Only a row still claimed for sending changes.
+-- Only a row still claimed (or being sent) changes.
 drop function if exists public.finish_announcement_send(bigint, boolean, text);
 drop function if exists public.finish_announcement_send(bigint, boolean, text, boolean);
 create or replace function public.finish_announcement_send(
@@ -283,7 +322,7 @@ begin
     update public.announcement_sends s
     set status = 'sent', sent_at = now(), finished_at = now(), attempts = s.attempts + 1,
         error = null
-    where s.id = p_id and s.status = 'sending'
+    where s.id = p_id and s.status in ('claimed', 'sending')
     returning s.announcement_id into ann;
     if ann is not null then
       update public.announcements a set sent_count = a.sent_count + 1 where a.id = ann;
@@ -291,24 +330,24 @@ begin
   elsif p_outcome = 'skipped' then
     update public.announcement_sends s
     set status = 'skipped', error = left(p_error, 200), finished_at = now()
-    where s.id = p_id and s.status = 'sending';
+    where s.id = p_id and s.status in ('claimed', 'sending');
   elsif p_outcome = 'retry' then
     update public.announcement_sends s
     set attempts = s.attempts + 1,
         error = left(p_error, 200),
         finished_at = now(),
         status = case when s.attempts + 1 >= 3 then 'failed' else 'pending' end
-    where s.id = p_id and s.status = 'sending';
+    where s.id = p_id and s.status in ('claimed', 'sending');
   elsif p_outcome = 'later' then
     -- The mail service's quota is used up: back in the queue, without using an attempt.
     update public.announcement_sends s
     set status = 'pending', error = left(p_error, 200), finished_at = now()
-    where s.id = p_id and s.status = 'sending';
+    where s.id = p_id and s.status in ('claimed', 'sending');
   elsif p_outcome = 'failed' then
     update public.announcement_sends s
     set attempts = s.attempts + 1, error = left(p_error, 200), status = 'failed',
         finished_at = now()
-    where s.id = p_id and s.status = 'sending';
+    where s.id = p_id and s.status in ('claimed', 'sending');
   else
     raise exception 'Unknown send outcome: %', p_outcome;
   end if;
@@ -399,6 +438,7 @@ $$;
 revoke execute on function public.updates_audience(text, text, integer) from public, anon, authenticated;
 revoke execute on function public.publish_announcement(bigint, text) from public, anon, authenticated;
 revoke execute on function public.claim_announcement_sends(integer, integer) from public, anon, authenticated;
+revoke execute on function public.begin_announcement_send(bigint, text) from public, anon, authenticated;
 revoke execute on function public.finish_announcement_send(bigint, text, text) from public, anon, authenticated;
 revoke execute on function public.unsubscribe_by_token(text) from public, anon, authenticated;
 revoke execute on function public.import_contacts(jsonb, text) from public, anon, authenticated;
@@ -409,6 +449,7 @@ grant execute on function public.subscription_by_token(text) to service_role;
 grant execute on function public.updates_audience(text, text, integer) to service_role;
 grant execute on function public.publish_announcement(bigint, text) to service_role;
 grant execute on function public.claim_announcement_sends(integer, integer) to service_role;
+grant execute on function public.begin_announcement_send(bigint, text) to service_role;
 grant execute on function public.finish_announcement_send(bigint, text, text) to service_role;
 grant execute on function public.unsubscribe_by_token(text) to service_role;
 grant execute on function public.import_contacts(jsonb, text) to service_role;

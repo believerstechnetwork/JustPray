@@ -175,9 +175,13 @@ export interface Db {
    *  in the same step. Null when unknown or already published. */
   publishAnnouncement(id: number, scope: AudienceScope): Promise<AnnouncementRecord | null>;
   /** Claim up to `limit` queued emails, never more than `dailyLimit` sent in the last 24 hours.
-   *  A claim left by a run that died more than 10 minutes ago is closed as failed, never sent
-   *  again, since the email may have gone out. */
+   *  After 10 minutes, a claim that never started sending goes back in the queue; a send that
+   *  started but never finished is closed as failed, never sent again, since it may have gone
+   *  out. */
   claimOutbox(limit: number, dailyLimit: number): Promise<OutboxItem[]>;
+  /** Switch a claimed email to sending, just before it goes out. False when this run no longer
+   *  holds the claim (it stalled and the claim was given back or taken): then it must not send. */
+  beginOutbox(id: number, claimToken: string): Promise<boolean>;
   /** Record what happened to one claimed email: `sent`; `retry` (nothing went out: back in the
    *  queue, failed after 3 attempts in all); `failed` (closed, never retried, because it may
    *  have gone out or can never go); `skipped` (closed unsent: the person unsubscribed); or
@@ -245,6 +249,8 @@ export interface OutboxItem {
   email: string;
   /** Private token for this person's unsubscribe link. */
   unsubToken: string;
+  /** Proves this run holds the claim; needed to start sending. */
+  claimToken: string;
 }
 
 export interface Mailer {

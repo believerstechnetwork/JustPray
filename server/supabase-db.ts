@@ -441,7 +441,15 @@ export class SupabaseDb implements Db {
       name: s(r.name),
       email: s(r.email),
       unsubToken: s(r.unsub_token),
+      claimToken: s(r.claim_token),
     }));
+  }
+
+  async beginOutbox(id: number, claimToken: string): Promise<boolean> {
+    const res = check(
+      await this.sb.rpc('begin_announcement_send', { p_id: id, p_token: claimToken }),
+    );
+    return res === true;
   }
 
   async finishOutbox(id: number, outcome: OutboxOutcome, error?: string): Promise<void> {

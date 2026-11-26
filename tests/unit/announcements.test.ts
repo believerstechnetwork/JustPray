@@ -773,6 +773,28 @@ describe('review fixes', () => {
     expect(ids).toEqual([today, running, later]);
   });
 
+  it('gives back a claim that stalled before sending, and never lets the stalled run send', async () => {
+    await fresh(['a@x.co']);
+    // Run 1 claims the email, then stalls (say, a slow lookup) before sending it.
+    const [stalled] = await db.claimOutbox(1, 99);
+    expect(db.outbox[0]).toMatchObject({ status: 'claimed', attempts: 0 });
+    db.outbox[0]!.claimedAt -= 11 * 60_000;
+    // Run 2, ten minutes later: the claim goes back in the queue unharmed and is sent once.
+    await processOutbox({ db, mailer, siteUrl: 'https://jp.test', limit: 10, dailyLimit: 99 });
+    expect(mailer.sent).toHaveLength(1);
+    expect(db.outbox[0]).toMatchObject({ status: 'sent', attempts: 1 });
+    // Run 1 wakes up: its claim is gone, so it may not start sending.
+    expect(await db.beginOutbox(stalled!.id, stalled!.claimToken)).toBe(false);
+  });
+
+  it('lets only the run holding the claim start sending', async () => {
+    await fresh(['a@x.co']);
+    const [item] = await db.claimOutbox(1, 99);
+    expect(await db.beginOutbox(item!.id, 'someone-else')).toBe(false);
+    expect(await db.beginOutbox(item!.id, item!.claimToken)).toBe(true);
+    expect(await db.beginOutbox(item!.id, item!.claimToken)).toBe(false);
+  });
+
   it('publishes once when two publishes run at the same time', async () => {
     const id = (
       await db.createAnnouncement({
