@@ -79,8 +79,11 @@ import() { # people json, key ('' for none) -> added|existing|unsubscribed
 
 echo "Schema"
 fresh_db
+# Every scratch file is made by mktemp and removed on exit.
 main_schema=$(mktemp)
-trap 'rm -f "$main_schema"' EXIT
+rerun_result=$(mktemp)
+rerun_output=$(mktemp)
+trap 'rm -f "$main_schema" "$rerun_result" "$rerun_output"' EXIT
 if git rev-parse -q --verify origin/main >/dev/null 2>&1 \
    && git show "origin/main:$SCHEMA" >"$main_schema" 2>/dev/null; then
   schema "$main_schema"; check "the live (main) schema installs" "$?" 0
@@ -111,18 +114,17 @@ read -r send token < <(start_send)
 (q -c "begin; select count(*) from announcements; select pg_sleep(8); commit;" >/dev/null) &
 holder=$!
 sleep 0.5
-tmp=$(mktemp)
-(t0=$(ms); schema $SCHEMA >"$tmp.out"; echo "$? $(($(ms) - t0))" >"$tmp") &
+(t0=$(ms); schema $SCHEMA >"$rerun_output"; echo "$? $(($(ms) - t0))" >"$rerun_result") &
 script=$!
 sleep 1.5
 t=$(ms); q -c "set lock_timeout = '1s'; select finish_announcement_send($send, '$token', 'sent')" >/dev/null
 check "the send finishes while the rerun is retrying" "$?" 0
 check_lt "without waiting (ms)" $(($(ms) - t)) 1000
-wait $script; read -r code took <"$tmp"
+wait $script; read -r code took <"$rerun_result"
 check "the rerun stops, changing nothing" "$code" 1
-check_match "says the tables are busy" "$(cat "$tmp.out")" "tables are busy right now"
+check_match "says the tables are busy" "$(cat "$rerun_output")" "tables are busy right now"
 check_lt "after about five seconds (ms)" "$took" 7000
-wait $holder; rm -f "$tmp" "$tmp.out"
+wait $holder
 
 echo "Rerun while an import is saving"
 (q -c "begin; select from import_contacts('[{\"name\":\"Z\",\"email\":\"z@example.com\"}]'::jsonb, 'L', 'key-zzzzzzzzzzzzzzzz');
