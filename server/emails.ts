@@ -35,11 +35,11 @@ interface Detail {
   value: string;
 }
 
-/** A button that survives Outlook: a padded link inside a coloured table cell. */
 /** A link the email may show as a button: web addresses only, never javascript: or data:. */
 const webLink = (v: string | null | undefined): string | undefined =>
   v && /^https?:\/\//i.test(v.trim()) ? v.trim() : undefined;
 
+/** A button that survives Outlook: a padded link inside a coloured table cell. */
 function button(label: string, href: string, kind: 'solid' | 'outline'): string {
   const solid = kind === 'solid';
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="display:inline-table;margin:0 8px 10px 0"><tr><td class="${solid ? 'btn-solid' : 'btn-outline'}" style="border-radius:12px;${solid ? fixed(C.indigo) : `background:${C.card}`};border:1.5px solid ${solid ? C.indigo : C.rule}"><a href="${esc(href)}" style="display:inline-block;padding:13px 22px;font:600 15px/1 ${SANS};color:${solid ? '#FFFFFF' : C.indigo};text-decoration:none;border-radius:12px">${label}</a></td></tr></table>`;
