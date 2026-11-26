@@ -497,16 +497,23 @@ export class SupabaseDb implements Db {
   }
 
   async upcomingAnnouncements(todayIso: string, limit: number): Promise<AnnouncementRecord[]> {
-    const rows = check(
-      await this.sb
-        .from('announcements')
-        .select('*')
-        .eq('status', 'published')
-        .or(`end_date.gte.${todayIso},and(end_date.is.null,date.gte.${todayIso})`)
-        .order('date', { ascending: true })
-        // Few events are ever upcoming at once; read enough to order them here.
-        .limit(100),
-    ) as Row[];
+    // Every published event that has not ended, read a page at a time (responses are capped), so
+    // the order below sees them all; there are only ever a handful.
+    const rows: Row[] = [];
+    const page = 500;
+    for (let from = 0; ; from += page) {
+      const batch = check(
+        await this.sb
+          .from('announcements')
+          .select('*')
+          .eq('status', 'published')
+          .or(`end_date.gte.${todayIso},and(end_date.is.null,date.gte.${todayIso})`)
+          .order('id', { ascending: true })
+          .range(from, from + page - 1),
+      ) as Row[];
+      rows.push(...batch);
+      if (batch.length < page) break;
+    }
     return orderUpcoming(rows.map(toAnnouncement), todayIso, limit);
   }
 

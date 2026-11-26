@@ -416,6 +416,23 @@ describe('SupabaseDb', () => {
     expect(await db.unsubscribe('tok')).toBe('a@b.co');
   });
 
+  it('reads every upcoming event in pages before ordering them for the home page', async () => {
+    const row = (id: number, date: string, end: string | null = null) => ({
+      id,
+      title: `E${id}`,
+      date,
+      end_date: end,
+      status: 'published',
+    });
+    // A full first page of events already under way, then today's event on the second page.
+    const running = Array.from({ length: 500 }, (_, i) => row(i + 1, '2027-01-01', '2027-01-30'));
+    const { db, seen } = fakeSupabase([{ body: running }, { body: [row(501, '2027-01-05')] }]);
+    const list = await db.upcomingAnnouncements('2027-01-05', 3);
+    // The newest event dated today comes first, even though it was on the last page.
+    expect(list.map((a) => a.id)).toEqual([501, 500, 499]);
+    expect(seen).toHaveLength(2);
+  });
+
   it('reads the whole mailing list a page at a time, by email', async () => {
     const page = (from: number, count: number) =>
       Array.from({ length: count }, (_, i) => ({
