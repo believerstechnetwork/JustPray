@@ -117,7 +117,7 @@ ${banner ? `<tr><td style="background:${C.card};font-size:0;line-height:0"><img 
 ${body}
 </td></tr>
 <tr><td class="foot" align="center" style="padding:24px 12px 8px;font:400 13px/1.6 ${SANS};color:${C.ink2}">
-Just Pray · a free monthly prayer gathering for people in tech<br>by Believers Tech Network · <a class="link" href="${esc(site)}" style="color:${C.blue};text-decoration:none">${esc(site.replace(/^https?:\/\//, ''))}</a><br><span style="font-size:12px">${esc(reason)}${unsubscribeUrl ? ` <a class="link" href="${esc(unsubscribeUrl)}" style="color:${C.blue}">Unsubscribe</a>` : ''}</span>
+Just Pray · a free monthly prayer gathering for people in tech<br>by Believers Tech Network · <a class="link" href="${esc(site)}" style="color:${C.blue};text-decoration:none">${esc(site.replace(/^https?:\/\//, ''))}</a><br><span style="font-size:12px">${esc(reason)}${unsubscribeUrl ? `<br><a class="link" href="${esc(unsubscribeUrl)}" style="color:${C.blue};font-weight:600">Unsubscribe or manage your emails</a>` : ''}</span>
 </td></tr>
 </table></td></tr></table></body></html>`;
 }
@@ -380,7 +380,7 @@ export function announcementEmail(input: AnnouncementInput): Email {
     'Believers Tech Network',
     site,
     '',
-    `You're getting this because you asked to hear about future events. Unsubscribe: ${unsubscribeUrl}`,
+    `You're getting this because you asked to hear about future events. Unsubscribe or manage your emails: ${unsubscribeUrl}`,
   ].join('\n');
   const body = `${messageHtml(message)
     .map((p) => para(p))

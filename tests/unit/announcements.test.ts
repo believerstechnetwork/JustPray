@@ -267,6 +267,31 @@ describe('publishing and sending', () => {
     expect((await call('POST', '/api/unsubscribe', { token: 'x'.repeat(32) })).status).toBe(404);
   });
 
+  it('shows and changes email preferences from the link, with the email partly hidden', async () => {
+    const id = await draft();
+    await call('POST', `/api/admin/announcements/${id}/publish`, { audience: 'imported' });
+    await Promise.all(deferred);
+    const token = db.outbox.find((o) => o.email === 'imp@example.com')?.unsubToken;
+    const look = await call('POST', '/api/preferences', { token });
+    expect(look.data).toEqual({ email: 'im•••@example.com', subscribed: true });
+    expect(
+      (await call('POST', '/api/preferences', { token, action: 'unsubscribe' })).data,
+    ).toMatchObject({
+      subscribed: false,
+    });
+    expect((await call('GET', '/api/admin/announcements')).data.counts.imported).toBe(0);
+    expect(
+      (await call('POST', '/api/preferences', { token, action: 'resubscribe' })).data,
+    ).toMatchObject({
+      subscribed: true,
+    });
+    expect((await call('GET', '/api/admin/announcements')).data.counts.imported).toBe(1);
+    expect((await call('POST', '/api/preferences', { token: 'nope' })).status).toBe(404);
+    expect(mailer.sent[0]?.text).toContain(
+      'Unsubscribe or manage your emails: https://justprayy.netlify.app/#/unsubscribe/',
+    );
+  });
+
   it('sends a test to the organiser, marked as a test, without publishing', async () => {
     const res = await call('POST', '/api/admin/announcements/test', {
       ...ANN,

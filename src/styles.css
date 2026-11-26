@@ -1797,8 +1797,79 @@ td.acts .btn + .btn {
 .ann-send .check {
   margin-top: 8px;
 }
-.done-body.unsub {
-  grid-template-columns: minmax(0, 760px);
+/* ---------- email preferences ---------- */
+.prefs-body h1 {
+  font-size: clamp(46px, 5.4vw, 80px);
+}
+.prefs {
+  justify-self: center;
+  width: min(440px, 100%);
+  background: var(--card);
+  color: var(--ink);
+  border-radius: var(--r-card);
+  box-shadow: 0 34px 60px -30px rgb(0 0 0 / 55%);
+  padding: 30px 30px 24px;
+  --focus: #0a6fc2;
+}
+html[data-mode='dark'] .prefs {
+  --focus: #7ab9f5;
+}
+.prefs-k {
+  font: 600 12px var(--body);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.prefs-email {
+  font: 400 28px/1.2 var(--display);
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+.prefs-row {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  gap: 14px;
+  align-items: center;
+  margin: 22px 0;
+  padding: 18px 0;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+.prefs-ic {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: var(--mute-t);
+  color: var(--blue);
+}
+.prefs-row b {
+  display: block;
+  font-weight: 600;
+}
+.prefs-row span:not(.pill):not(.prefs-ic) {
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.pill {
+  font: 600 13px var(--body);
+  padding: 5px 12px;
+  border-radius: 999px;
+}
+.pill.on {
+  background: #e3f4ea;
+  color: var(--ok);
+}
+.pill.off {
+  background: var(--mute-t);
+  color: var(--ink-2);
+}
+html[data-mode='dark'] .pill.on {
+  background: #123a2a;
+}
+.prefs .err {
+  margin-top: 12px;
 }
 .ann-photos {
   display: flex;

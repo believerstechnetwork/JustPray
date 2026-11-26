@@ -394,11 +394,57 @@ test('organiser previews, tests and publishes an announcement that then shows on
   await expect(card).toContainText('Venue to be announced');
 });
 
+test('the email preferences page unsubscribes, and can undo it', async ({ page }) => {
+  const tag = Math.random().toString(36).slice(2, 8);
+  const email = `prefs-${tag}@example.com`;
+  await signIn(page);
+  await page.request.post('/api/admin/contacts/import', {
+    data: { label: 'e2e', people: [{ name: 'Pref Person', email }] },
+  });
+  await page.getByRole('button', { name: 'Announcements', exact: true }).click();
+  await page.getByRole('button', { name: 'New announcement' }).click();
+  await page.getByLabel('Title', { exact: true }).fill(`Prefs ${tag}`);
+  await page.getByLabel('Date', { exact: true }).fill('2099-10-10');
+  await page.getByLabel('Venue', { exact: true }).fill('Online');
+  await page.getByLabel('Summary', { exact: true }).fill('A test.');
+  await page.getByLabel('Subject', { exact: true }).fill(`Prefs ${tag}`);
+  await page.getByLabel('Message', { exact: true }).fill('Hi {first name},');
+  await page.getByRole('button', { name: 'Publish…' }).click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: /Publish and email/ })
+    .click();
+
+  // Follow the link in the email this person received.
+  let link = '';
+  await expect
+    .poll(async () => {
+      const sent = (await (await page.request.get('/api/dev/mail')).json()) as {
+        to: string;
+        text: string;
+      }[];
+      link =
+        /#\/unsubscribe\/[A-Za-z0-9_-]+/.exec(sent.find((m) => m.to === email)?.text ?? '')?.[0] ??
+        '';
+      return link;
+    })
+    .not.toBe('');
+  await page.goto(`/${link}`);
+  await page.reload();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Email preferences');
+  await expect(page.getByText(`pr•••@example.com`)).toBeVisible();
+  await expect(page.locator('.pill')).toHaveText('On');
+  await page.getByRole('button', { name: 'Unsubscribe' }).click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('You’re unsubscribed.');
+  await expect(page.locator('.pill')).toHaveText('Off');
+  await page.getByRole('button', { name: 'Resubscribe' }).click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Welcome back.');
+  await expect(page.locator('.pill')).toHaveText('On');
+});
+
 test('a broken unsubscribe link says so', async ({ page }) => {
   await page.goto('/#/unsubscribe/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
   await page.reload();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Unsubscribe?');
-  await page.getByRole('button', { name: 'Unsubscribe' }).click();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('This link isn’t working.');
   await page.goto('/#/unsubscribe');
   await page.reload();

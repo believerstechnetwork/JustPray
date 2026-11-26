@@ -178,6 +178,10 @@ export interface Db {
   finishOutbox(id: number, ok: boolean, error?: string): Promise<void>;
   /** Unsubscribe the person behind an unsubscribe link. Returns their email, or null. */
   unsubscribe(token: string): Promise<string | null>;
+  /** Undo an unsubscribe from the same link. Returns their email, or null. */
+  resubscribe(token: string): Promise<string | null>;
+  /** Who an unsubscribe link belongs to, and whether they still get announcements. */
+  subscriptionByToken(token: string): Promise<{ email: string; subscribed: boolean } | null>;
   /** Published events that have not ended by this Lagos date, soonest first. */
   upcomingAnnouncements(todayIso: string, limit: number): Promise<AnnouncementRecord[]>;
   /** Everyone who gets announcements, one per email: people who booked and asked to hear about

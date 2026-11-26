@@ -283,6 +283,38 @@ begin
 end;
 $$;
 
+-- Undo an unsubscribe from the same link (the email preferences page). Emails skipped while
+-- they were unsubscribed are not sent afterwards.
+create or replace function public.resubscribe_by_token(p_token text)
+returns text
+language plpgsql
+set search_path = public
+as $$
+declare
+  who text;
+begin
+  select s.email into who from public.announcement_sends s where s.unsub_token = p_token;
+  if who is null then
+    return null;
+  end if;
+  delete from public.unsubscribes u where u.email = who;
+  return who;
+end;
+$$;
+
+-- Who an unsubscribe link belongs to, and whether they still get announcements.
+create or replace function public.subscription_by_token(p_token text)
+returns table (email text, subscribed boolean)
+language sql
+stable
+set search_path = public
+as $$
+  select s.email, not exists (select 1 from public.unsubscribes u where u.email = s.email)
+  from public.announcement_sends s
+  where s.unsub_token = p_token
+  limit 1;
+$$;
+
 -- Add people from an Excel import. p_people is a JSON array of {name, email}. Counts:
 -- added (new), existing (already on the list) and unsubscribed (not added back).
 create or replace function public.import_contacts(p_people jsonb, p_label text)
@@ -319,6 +351,10 @@ revoke execute on function public.claim_announcement_sends(integer, integer) fro
 revoke execute on function public.finish_announcement_send(bigint, boolean, text) from public, anon, authenticated;
 revoke execute on function public.unsubscribe_by_token(text) from public, anon, authenticated;
 revoke execute on function public.import_contacts(jsonb, text) from public, anon, authenticated;
+revoke execute on function public.resubscribe_by_token(text) from public, anon, authenticated;
+revoke execute on function public.subscription_by_token(text) from public, anon, authenticated;
+grant execute on function public.resubscribe_by_token(text) to service_role;
+grant execute on function public.subscription_by_token(text) to service_role;
 grant execute on function public.updates_audience(text, text, integer) to service_role;
 grant execute on function public.publish_announcement(bigint, text) to service_role;
 grant execute on function public.claim_announcement_sends(integer, integer) to service_role;

@@ -15,6 +15,7 @@ export const DEV_ADMIN_PASSWORD = 'dev-password';
  * (NETLIFY_DEV is set) it stays off and the real function handles `/api/*`.
  */
 export function devApiMiddleware(): Connect.NextHandleFunction {
+  const mailer = new MemoryMailer();
   const deps: ApiDeps = {
     db: new MemoryDb({
       title: 'Just Pray · A Gathering of Hearts',
@@ -23,7 +24,7 @@ export function devApiMiddleware(): Connect.NextHandleFunction {
       venue: 'Sample venue, Lagos',
       capacity: 120,
     }),
-    mailer: new MemoryMailer(),
+    mailer,
     adminPassword: process.env.ADMIN_PASSWORD || DEV_ADMIN_PASSWORD,
     banks: {
       NGN: {
@@ -54,6 +55,12 @@ export function devApiMiddleware(): Connect.NextHandleFunction {
 
   return (req, res, next) => {
     if (!req.url?.startsWith('/api/')) return next();
+    // Local only: the emails "sent" so far, so end-to-end tests can follow their links.
+    if (req.url === '/api/dev/mail') {
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify(mailer.sent.map(({ to, subject, text }) => ({ to, subject, text }))));
+      return;
+    }
     void serve(req, res, deps).catch((e: unknown) => {
       console.error('[dev api]', e);
       res.statusCode = 500;

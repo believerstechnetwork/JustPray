@@ -192,19 +192,28 @@ async function loadCancel(token: string): Promise<void> {
   if (S.page === 'cancel') render();
 }
 
-async function confirmUnsubscribe(): Promise<void> {
-  if (S.busy) return;
-  S.busy = true;
-  render();
+/** Load, or change, the email preferences behind an unsubscribe link. */
+async function preferences(action?: 'unsubscribe' | 'resubscribe'): Promise<void> {
+  const u = S.unsub;
+  const token = u.token;
+  if (action) {
+    if (S.busy) return;
+    S.busy = true;
+    u.error = '';
+    render();
+  }
   try {
-    await api.unsubscribe(S.unsub.token);
-    S.unsub.state = 'done';
+    const res = await api.preferences(token, action);
+    if (S.unsub.token !== token) return;
+    Object.assign(u, { load: 'ready', email: res.email, subscribed: res.subscribed });
+    if (action) u.changed = action === 'unsubscribe' ? 'unsubscribed' : 'resubscribed';
   } catch (e) {
-    S.unsub.state = 'error';
-    S.unsub.error = errorMessage(e);
+    if (S.unsub.token !== token) return;
+    if (u.load === 'ready') u.error = errorMessage(e);
+    else Object.assign(u, { load: 'error', error: errorMessage(e) });
   }
   S.busy = false;
-  render();
+  if (S.page === 'unsubscribe') render();
 }
 
 /** Read a chosen Excel or CSV file in the browser, for the organiser to check before importing. */
@@ -278,10 +287,11 @@ function applyRoute(): void {
   const route = routeFromHash();
   if (route === 'unsubscribe') {
     const token = hashParts()[1] ?? '';
-    if (token !== S.unsub.token || !token)
-      S.unsub = token
-        ? { token, state: 'ask', error: '' }
-        : { token: '', state: 'error', error: '' };
+    if (token !== S.unsub.token || !token || S.unsub.load === 'error') {
+      S.unsub = { token, load: 'loading', email: '', subscribed: true, changed: null, error: '' };
+      if (token) void preferences();
+      else S.unsub.load = 'error';
+    }
   }
   if (route === 'cancel') {
     const token = hashParts()[1] ?? '';
@@ -671,7 +681,9 @@ document.addEventListener('click', async (e) => {
     case 'cancel-seat':
       return cancelSeat();
     case 'unsub-confirm':
-      return confirmUnsubscribe();
+      return preferences('unsubscribe');
+    case 'unsub-undo':
+      return preferences('resubscribe');
   }
 });
 

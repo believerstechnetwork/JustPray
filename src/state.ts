@@ -96,8 +96,17 @@ export interface UiState {
     notice: string;
     error: string;
   };
-  /** The unsubscribe page, opened from the link in an announcement. */
-  unsub: { token: string; state: 'ask' | 'done' | 'error'; error: string };
+  /** The email preferences page, opened from the unsubscribe link in an announcement. */
+  unsub: {
+    token: string;
+    load: 'loading' | 'ready' | 'error';
+    /** Partly hidden, e.g. "ad•••@example.com". */
+    email: string;
+    subscribed: boolean;
+    /** What was just changed on this visit, for the heading. */
+    changed: 'unsubscribed' | 'resubscribed' | null;
+    error: string;
+  };
   /** The "Cancel my seat" page, opened from the private link in an email. */
   cancel: {
     token: string;
@@ -137,7 +146,7 @@ export const S: UiState = {
   adminError: '',
   adminNotice: '',
   cancel: { token: '', load: 'loading', info: null, error: '', justCancelled: false },
-  unsub: { token: '', state: 'ask', error: '' },
+  unsub: { token: '', load: 'loading', email: '', subscribed: true, changed: null, error: '' },
   upcoming: [],
   ann: {
     list: null,

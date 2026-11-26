@@ -266,6 +266,12 @@ export const toContent = (f: AnnouncementFields) => ({
   linkLabel: f.linkLabel ?? undefined,
 });
 
+/** "adaobi@example.com" -> "ad•••@example.com": enough to recognise, not to read off a screen. */
+export const maskEmail = (email: string): string => {
+  const [user = '', domain = ''] = email.split('@');
+  return `${user.slice(0, Math.min(2, Math.max(1, user.length - 1)))}•••@${domain}`;
+};
+
 /** What the public site shows of an announcement. */
 const publicAnnouncement = (a: AnnouncementRecord) => ({
   id: a.id,
@@ -701,6 +707,19 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
         );
       }
       return json(200, { ok: true });
+    }
+
+    // The email preferences page: who the link is for (partly hidden), and on/off.
+    if (path === '/api/preferences' && method === 'POST') {
+      const body = await readJson(req);
+      const token = String(field(body, 'token') ?? '');
+      const action = field(body, 'action');
+      if (!TOKEN_RE.test(token)) return fail(404, 'This link isn’t working.');
+      if (action === 'unsubscribe') await db().unsubscribe(token);
+      else if (action === 'resubscribe') await db().resubscribe(token);
+      const found = await db().subscriptionByToken(token);
+      if (!found) return fail(404, 'This link isn’t working.');
+      return json(200, { email: maskEmail(found.email), subscribed: found.subscribed });
     }
 
     if (path === '/api/unsubscribe' && method === 'POST') {

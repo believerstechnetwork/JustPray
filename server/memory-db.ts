@@ -299,6 +299,18 @@ export class MemoryDb implements Db {
     } else o.status = o.attempts >= 3 ? 'failed' : 'pending';
   }
 
+  async resubscribe(token: string): Promise<string | null> {
+    const o = this.outbox.find((x) => x.unsubToken === token);
+    if (!o) return null;
+    this.unsubscribed.delete(o.email);
+    return o.email;
+  }
+
+  async subscriptionByToken(token: string): Promise<{ email: string; subscribed: boolean } | null> {
+    const o = this.outbox.find((x) => x.unsubToken === token);
+    return o ? { email: o.email, subscribed: !this.unsubscribed.has(o.email) } : null;
+  }
+
   async unsubscribe(token: string): Promise<string | null> {
     const o = this.outbox.find((x) => x.unsubToken === token);
     if (!o) return null;

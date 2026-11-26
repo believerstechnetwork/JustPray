@@ -448,6 +448,17 @@ export class SupabaseDb implements Db {
     );
   }
 
+  async resubscribe(token: string): Promise<string | null> {
+    const email = check(await this.sb.rpc('resubscribe_by_token', { p_token: token })) as unknown;
+    return typeof email === 'string' && email ? email : null;
+  }
+
+  async subscriptionByToken(token: string): Promise<{ email: string; subscribed: boolean } | null> {
+    const rows = check(await this.sb.rpc('subscription_by_token', { p_token: token })) as Row[];
+    const r = rows[0];
+    return r ? { email: s(r.email), subscribed: r.subscribed === true } : null;
+  }
+
   async unsubscribe(token: string): Promise<string | null> {
     const email = check(await this.sb.rpc('unsubscribe_by_token', { p_token: token })) as unknown;
     return typeof email === 'string' && email ? email : null;

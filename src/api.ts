@@ -73,7 +73,8 @@ export const api = {
     call<ImportOutcome>('POST', 'admin/contacts/import', { people, label }),
   testAnnouncement: (form: AnnouncementForm, to: string) =>
     call<{ ok: true }>('POST', 'admin/announcements/test', { ...form, to }),
-  unsubscribe: (token: string) => call<{ ok: true }>('POST', 'unsubscribe', { token }),
+  preferences: (token: string, action?: 'unsubscribe' | 'resubscribe') =>
+    call<{ email: string; subscribed: boolean }>('POST', 'preferences', { token, action }),
   createAnnouncement: (form: AnnouncementForm) =>
     call<{ announcement: Announcement }>('POST', 'admin/announcements', form),
   updateAnnouncement: (id: number, form: AnnouncementForm) =>
