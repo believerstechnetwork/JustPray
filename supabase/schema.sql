@@ -3,8 +3,9 @@
 -- Best run when no announcement is sending (none shows "Sending" in the admin list) and nobody is
 -- publishing. To keep it safe even while the sender runs, the script first takes both announcement
 -- tables at once (below), in the order a send uses them, so a send simply waits for the update to
--- finish. If PostgreSQL still stops this script with a deadlock, run it again; a send it stops is
--- closed as failed (never sent twice).
+-- finish. If an email is being sent at that moment, it stops and changes nothing: wait two
+-- minutes and run it again. Do the same if PostgreSQL stops it with a deadlock. Nothing is ever
+-- sent twice.
 --
 -- Only the server (Netlify Functions, using the secret key) can read or write these tables.
 -- Row Level Security is on and there are no policies, so the public API keys get nothing.
@@ -13,11 +14,32 @@
 -- the order send rows and then announcements, the same order a send takes them in. A send that
 -- comes along meanwhile then waits at its first step instead of holding one table while this
 -- script waits for it. (A fresh install has nothing to lock.)
+-- If an email is being sent at that moment, the script stops at once and changes nothing: the
+-- send's next step would otherwise wait for this script, and a send stopped while waiting would be
+-- closed as failed even if the email went out. The SQL Editor runs the whole script as one
+-- transaction, so stopping here also releases the locks straight away.
 do $$
+declare
+  in_flight boolean := false;
 begin
   if to_regclass('public.announcement_sends') is not null
      and to_regclass('public.announcements') is not null then
     lock table public.announcement_sends, public.announcements in access exclusive mode;
+    -- A run lasts under a minute, so a claim from the last two minutes belongs to a live run.
+    -- (Older versions of the table have no claimed_at, and no claims either.)
+    if exists (select 1 from information_schema.columns
+               where table_schema = 'public' and table_name = 'announcement_sends'
+                 and column_name = 'claimed_at') then
+      execute $q$
+        select exists (select 1 from public.announcement_sends
+                       where status in ('claimed', 'sending')
+                         and claimed_at > now() - interval '2 minutes')
+      $q$ into in_flight;
+    end if;
+    if in_flight then
+      raise exception 'An announcement email is being sent right now, so nothing was changed.'
+        using hint = 'Wait two minutes, then run this script again.';
+    end if;
   end if;
 end;
 $$;
