@@ -176,13 +176,24 @@ create trigger announcement_sends_unsent
   after update of status on public.announcement_sends
   for each row execute function public.count_unsent_announcement_send();
 revoke execute on function public.count_unsent_announcement_send() from public, anon, authenticated;
--- Count the ones closed before this column existed.
-update public.announcements a
-set unsent_count = (
-  select count(*) from public.announcement_sends s
-  where s.announcement_id = a.id and s.status in ('failed', 'skipped')
-)
-where a.status = 'published';
+-- Count the ones closed before this column existed. Each announcement is locked before its sends
+-- are counted (the count is a new statement, so it sees every send already finished), and a send
+-- finishing meanwhile waits for the lock, then adds to the stored count: none is lost.
+do $$
+declare
+  r record;
+begin
+  for r in select a.id from public.announcements a where a.status = 'published' loop
+    perform 1 from public.announcements a where a.id = r.id for update;
+    update public.announcements a
+    set unsent_count = (
+      select count(*) from public.announcement_sends s
+      where s.announcement_id = r.id and s.status in ('failed', 'skipped')
+    )
+    where a.id = r.id;
+  end loop;
+end;
+$$;
 
 alter table public.announcements enable row level security;
 alter table public.unsubscribes enable row level security;
@@ -328,9 +339,12 @@ language plpgsql
 set search_path = public
 as $$
 begin
+  -- A claim older than 10 minutes has expired even if no run has tidied it up yet: refuse it in
+  -- the same step, so the lease never depends on which run gets there first.
   update public.announcement_sends s
   set status = 'sending', claimed_at = now()
-  where s.id = p_id and s.status = 'claimed' and s.claim_token = p_token;
+  where s.id = p_id and s.status = 'claimed' and s.claim_token = p_token
+    and s.claimed_at >= now() - interval '10 minutes';
   return found;
 end;
 $$;

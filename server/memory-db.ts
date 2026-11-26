@@ -214,7 +214,12 @@ export class MemoryDb implements Db {
     const unsentCount = this.outbox.filter(
       (o) => o.announcementId === a.id && (o.status === 'failed' || o.status === 'skipped'),
     ).length;
-    return { ...a, unsentCount };
+    // emailContent is copied too, so a caller can never change the stored snapshot.
+    return {
+      ...a,
+      emailContent: a.emailContent ? { ...a.emailContent } : a.emailContent,
+      unsentCount,
+    };
   }
 
   async listAnnouncements(): Promise<AnnouncementRecord[]> {
@@ -351,8 +356,16 @@ export class MemoryDb implements Db {
 
   async beginOutbox(id: number, claimToken: string): Promise<boolean> {
     const o = this.outbox.find((x) => x.id === id);
-    if (!o || o.status !== 'claimed' || o.claimToken !== claimToken) return false;
-    Object.assign(o, { status: 'sending', claimedAt: this.now().getTime() });
+    const now = this.now().getTime();
+    // An expired claim (older than 10 minutes) is refused even before a run has reclaimed it.
+    if (
+      !o ||
+      o.status !== 'claimed' ||
+      o.claimToken !== claimToken ||
+      now - o.claimedAt > 10 * 60_000
+    )
+      return false;
+    Object.assign(o, { status: 'sending', claimedAt: now });
     return true;
   }
 
@@ -441,7 +454,11 @@ export class MemoryDb implements Db {
     // announcement sent to imported people only reaches everyone in the sheet.
     const onList = new Set(this.contacts.map((c) => c.email));
     const result = { added: 0, existing: 0, unsubscribed: 0 };
+    // Each address counts once, as in the database (which drops repeats before counting).
+    const seen = new Set<string>();
     for (const p of people) {
+      if (seen.has(p.email)) continue;
+      seen.add(p.email);
       if (this.unsubscribed.has(p.email)) result.unsubscribed++;
       else if (onList.has(p.email)) result.existing++;
       else {

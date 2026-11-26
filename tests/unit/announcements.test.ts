@@ -134,6 +134,22 @@ describe('reading a spreadsheet', () => {
     ]);
   });
 
+  it('picks the address column over an opt-in column that also mentions email', () => {
+    const out = rowsToContacts([
+      ['Name', 'Email Opt-In', 'Email'],
+      ['Ada', 'Yes', 'ada@example.com'],
+    ]);
+    expect(out.contacts).toEqual([{ name: 'Ada', email: 'ada@example.com' }]);
+    expect(out.invalid).toBe(0);
+    // Without a plain "Email" heading, the email-ish column that holds addresses wins.
+    expect(
+      rowsToContacts([
+        ['Name', 'Email opt-in', 'Work email'],
+        ['Bola', 'No', 'bola@example.com'],
+      ]).contacts,
+    ).toEqual([{ name: 'Bola', email: 'bola@example.com' }]);
+  });
+
   it('reads CSV with quotes, commas, semicolons and Windows line ends', () => {
     expect(parseCsv('﻿Name,Email\r\n"Obi, Ada",a@b.co\r\n"Say ""hi""",c@d.co')).toEqual([
       ['Name', 'Email'],
@@ -674,7 +690,11 @@ describe('review fixes', () => {
     for (const e of ['a@x.co', 'b@x.co', 'c@x.co'])
       db.contacts.push({ name: 'A', email: e, source: 'S' });
     await db.publishAnnouncement(id, 'imported');
-    expect(await db.claimOutbox(2, 2)).toHaveLength(2);
+    const claimed = await db.claimOutbox(2, 2);
+    expect(claimed).toHaveLength(2);
+    expect(await db.claimOutbox(2, 2)).toHaveLength(0);
+    // An email being sent counts as well as one only claimed.
+    expect(await db.beginOutbox(claimed[0]!.id, claimed[0]!.claimToken)).toBe(true);
     expect(await db.claimOutbox(2, 2)).toHaveLength(0);
   });
 
@@ -937,6 +957,33 @@ describe('review fixes', () => {
     // The run that holds the claim records the result.
     await db.finishOutbox(fresh2!.id, fresh2!.claimToken, 'sent');
     expect(db.outbox[0]?.status).toBe('sent');
+  });
+
+  it('refuses to start an expired claim even before another run has reclaimed it', async () => {
+    await fresh(['a@x.co']);
+    const [old] = await db.claimOutbox(1, 99);
+    db.outbox[0]!.claimedAt -= 11 * 60_000;
+    // No other run has tidied up yet, but the lease is over.
+    expect(await db.beginOutbox(old!.id, old!.claimToken)).toBe(false);
+    expect(db.outbox[0]?.status).toBe('claimed');
+    // A fresh claim starts as usual.
+    const [renewed] = await db.claimOutbox(1, 99);
+    expect(await db.beginOutbox(renewed!.id, renewed!.claimToken)).toBe(true);
+  });
+
+  it('counts each address once when the same email is imported twice', async () => {
+    db.unsubscribed.add('gone@x.co');
+    expect(
+      await db.importContacts(
+        [
+          { name: 'A', email: 'new@x.co' },
+          { name: 'A again', email: 'new@x.co' },
+          { name: 'G', email: 'gone@x.co' },
+          { name: 'G again', email: 'gone@x.co' },
+        ],
+        'Sheet',
+      ),
+    ).toEqual({ added: 1, existing: 0, unsubscribed: 1 });
   });
 
   it('lets only the run holding the claim start sending', async () => {

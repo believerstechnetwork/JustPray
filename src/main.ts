@@ -371,10 +371,20 @@ async function copy(button: HTMLElement): Promise<void> {
 
 /* ---------- announcements ---------- */
 
+/** Bumped when a list read starts, and when a save, publish or delete changes the list here. A
+ *  read answers only if neither happened while it was on its way, so an older answer can never
+ *  bring back a draft that was just deleted (or undo a save). */
+let annReads = 0;
+let annChanges = 0;
+
 async function loadAnnouncements(): Promise<void> {
   S.ann.loadFailed = false;
+  const read = ++annReads;
+  const changesAtStart = annChanges;
   try {
     const res = await api.announcements();
+    if (read !== annReads) return; // a newer read is on its way
+    if (changesAtStart !== annChanges) return void loadAnnouncements(); // read again, fresh
     S.ann.list = res.announcements;
     S.ann.audience = res.audience;
     S.ann.counts = res.counts;
@@ -382,6 +392,7 @@ async function loadAnnouncements(): Promise<void> {
     // Keep an address the organiser typed; otherwise suggest the organisers' inbox.
     if (!S.ann.testTo) S.ann.testTo = res.testTo;
   } catch (e) {
+    if (read !== annReads) return;
     S.ann.error = errorMessage(e);
     S.ann.loadFailed = true;
     if (e instanceof ApiError && e.status === 401) S.adminAuthed = false;
@@ -448,6 +459,7 @@ async function saveAnnouncement(): Promise<number | null> {
         : await api.createAnnouncement(S.ann.form);
     const list = S.ann.list ?? [];
     S.ann.list = [announcement, ...list.filter((x) => x.id !== announcement.id)];
+    annChanges++;
     // The home page shows published events, so refresh it whichever editor is open now.
     if (announcement.status === 'published') void refreshUpcoming();
     if (editor !== annEditor) return null;
@@ -609,6 +621,7 @@ async function annAction(action: string, el: HTMLElement): Promise<void> {
           a.send.booked && a.send.imported ? 'all' : a.send.booked ? 'booked' : 'imported';
         const { announcement } = await api.publishAnnouncement(a.editing, scope);
         a.list = (a.list ?? []).map((x) => (x.id === announcement.id ? announcement : x));
+        annChanges++;
         void refreshUpcoming();
         S.busy = false;
         if (editor !== annEditor) return render();
@@ -639,6 +652,7 @@ async function annAction(action: string, el: HTMLElement): Promise<void> {
       try {
         await api.deleteAnnouncement(id);
         a.list = (a.list ?? []).filter((x) => x.id !== id);
+        annChanges++;
         if (editor === annEditor) a.editing = null;
       } catch (e) {
         if (editor === annEditor) a.error = errorMessage(e);

@@ -47,6 +47,7 @@ export interface Announcement extends Omit<UpcomingEvent, 'id'> {
   message: string;
   status: 'draft' | 'published';
   publishedAt: string | null;
+  /** Emails the mail service accepted (inbox delivery is not confirmed). */
   sentCount: number;
   /** Emails closed without a confirmed delivery: failed (some may still have arrived, such as
    *  after a timeout), or skipped because the person unsubscribed. */

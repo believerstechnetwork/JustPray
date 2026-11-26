@@ -17,6 +17,25 @@ export interface ParsedList {
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const cell = (v: unknown): string => (v === null || v === undefined ? '' : String(v).trim());
 
+/** The email column from its heading. A plain address heading ("Email", "E-mail address") wins;
+ *  otherwise, of the headings that mention email ("Email opt-in", "Work email"), the one whose
+ *  cells hold the most addresses; -1 when no heading mentions email. */
+function findEmailHeading(head: string[], rows: string[][]): number {
+  const candidates = head
+    .map((h, i) => ({ h: h.trim(), i }))
+    .filter(({ h }) => /e-?mail/.test(h) && !EMAIL_RE.test(h));
+  if (!candidates.length) return -1;
+  const plain = candidates.find(({ h }) => /^(your\s+)?e-?mail(\s+address)?$/.test(h));
+  if (plain) return plain.i;
+  let best = candidates[0]?.i ?? -1;
+  let bestHits = -1;
+  for (const { i } of candidates) {
+    const hits = rows.filter((r) => EMAIL_RE.test((r[i] ?? '').toLowerCase())).length;
+    if (hits > bestHits) [best, bestHits] = [i, hits];
+  }
+  return best;
+}
+
 /** Turn sheet rows (the first may be headings) into people. Finds the email column by its heading
  *  ("Email", "E-mail address") or, without headings, by its contents; the name comes from a
  *  "Name"/"Full name" column, or "First name" + "Last name". */
@@ -28,7 +47,7 @@ export function rowsToContacts(rows: unknown[][]): ParsedList {
   // A heading is a label, never an address: "email@example.com" in a first row of data is not
   // the heading "Email".
   const find = (re: RegExp): number => head.findIndex((h) => re.test(h) && !EMAIL_RE.test(h));
-  let emailCol = find(/e-?mail/);
+  let emailCol = findEmailHeading(head, table.slice(1));
   const hasHeadings = emailCol >= 0;
   if (!hasHeadings) {
     // No headings: the email column is the one whose cells look most like email addresses.

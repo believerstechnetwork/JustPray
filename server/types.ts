@@ -120,7 +120,8 @@ export interface AnnouncementRecord extends AnnouncementFields {
   id: number;
   status: 'draft' | 'published';
   publishedAt: string | null;
-  /** Emails delivered so far. */
+  /** Emails the mail service accepted so far (it took the message; inbox delivery is not
+   *  confirmed). */
   sentCount: number;
   /** Emails closed without a confirmed delivery: failed (some may still have arrived, such as
    *  after a timeout), or skipped because the person unsubscribed. Sending is finished once

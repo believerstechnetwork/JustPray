@@ -92,7 +92,7 @@ export function emailPreviewHtml(f: AnnouncementForm): string {
     announcement: {
       ...f,
       title: f.title || 'Event title',
-      date: f.date || new Date().toISOString().slice(0, 10),
+      date: f.date || lagosToday(),
       venue: f.venue || (f.venueTba ? '' : 'Venue'),
       theme: f.theme ?? undefined,
       subject: f.subject || 'Subject',
@@ -125,6 +125,10 @@ const PHOTOS: ReadonlyArray<[keyof typeof IMG, string]> = [
 ];
 const photoUrl = (k: keyof typeof IMG): string => new URL(IMG[k], location.origin).href;
 
+/** Today's date (YYYY-MM-DD) in Lagos, where the events are. */
+const lagosToday = (): string =>
+  new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' });
+
 const people = (n: number): string =>
   `${n.toLocaleString('en-GB')} ${n === 1 ? 'person' : 'people'}`;
 
@@ -145,7 +149,8 @@ const progress = (x: Announcement): string => {
 };
 
 const statusOf = (x: Announcement): string => {
-  const ended = (x.endDate ?? x.date) < new Date().toISOString().slice(0, 10);
+  // Today in Lagos, as the public site uses: an event shows through its last Lagos day.
+  const ended = (x.endDate ?? x.date) < lagosToday();
   if (x.status === 'draft') return '<span class="status mute">Draft</span>';
   return `<span class="status ${ended ? 'mute' : sending(x) ? 'warn' : 'ok'}">${ended ? 'Ended' : 'Published'}</span><small>${progress(x)}</small>`;
 };
