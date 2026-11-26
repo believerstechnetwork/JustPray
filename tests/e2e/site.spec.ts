@@ -384,6 +384,11 @@ test('organiser previews, tests and publishes an announcement that then shows on
   const dialog = page.getByRole('dialog');
   // Keyboard users land in the dialog, and toggling a list keeps their place.
   await expect(page.locator('#ann-c-h')).toBeFocused();
+  // Shift+Tab from the heading wraps to the dialog's last control, never the form behind it.
+  await page.keyboard.press('Shift+Tab');
+  await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(dialog.getByLabel(/People who booked a seat/)).toBeFocused();
   await dialog.getByLabel(/People who booked a seat/).focus();
   await page.keyboard.press('Space');
   await expect(dialog.getByLabel(/People who booked a seat/)).toBeFocused();

@@ -907,11 +907,13 @@ document.addEventListener('keydown', (e) => {
   const first = items[0];
   const last = items[items.length - 1];
   if (!first || !last) return;
+  // Focus may be on a control, on the heading (where the dialog opens), or outside the dialog.
+  const at = items.indexOf(document.activeElement as HTMLElement);
   const inside = dialog.contains(document.activeElement);
-  if (e.shiftKey && (document.activeElement === first || !inside)) {
+  if (e.shiftKey && (at <= 0 || !inside)) {
     e.preventDefault();
     last.focus();
-  } else if (!e.shiftKey && (document.activeElement === last || !inside)) {
+  } else if (!e.shiftKey && (at === items.length - 1 || !inside)) {
     e.preventDefault();
     first.focus();
   }
