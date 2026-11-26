@@ -59,6 +59,13 @@ export class GmailMailer implements Mailer {
       typeof e.responseCode === 'number' || ['EAUTH', 'EDNS', 'EENVELOPE'].includes(String(e.code))
     );
   }
+
+  /** Gmail's daily sending limit (550 5.4.5) or a temporary rate limit (421 / 4.7.0). */
+  isQuota(error: unknown): boolean {
+    const e = (error ?? {}) as { responseCode?: unknown; response?: unknown; message?: unknown };
+    const text = `${String(e.response ?? '')} ${String(e.message ?? '')}`;
+    return e.responseCode === 421 || /\b(5\.4\.5|4\.7\.0)\b|sending limit|rate limit/i.test(text);
+  }
 }
 
 /** Resend's HTTP API. Needs a verified sending domain. */
@@ -98,6 +105,11 @@ export class ResendMailer implements Mailer {
    *  "slow down", but not 408 or 409). A timeout, a dropped connection or a 5xx may come after Resend took it, and
    *  the idempotency key only lasts 24 hours while a queued retry can wait longer behind the
    *  daily limit, so those are not retried. */
+  /** 429: Resend's rate limit or daily quota. Nothing was sent. */
+  isQuota(error: unknown): boolean {
+    return (error as { status?: unknown } | null)?.status === 429;
+  }
+
   canRetry(error: unknown): boolean {
     const status = (error as { status?: unknown } | null)?.status;
     // 408 (timed out) and 409 (another send with this key is still in progress) leave the

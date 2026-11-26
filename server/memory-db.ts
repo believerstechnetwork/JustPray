@@ -251,6 +251,11 @@ export class MemoryDb implements Db {
   async publishAnnouncement(id: number, scope: AudienceScope): Promise<AnnouncementRecord | null> {
     const a = this.announcements.find((x) => x.id === id);
     if (!a || a.status !== 'draft') return null;
+    // Mark it published before the first await, so a second publish running at the same time
+    // finds it already taken and queues nothing (as the database's row lock does).
+    a.status = 'published';
+    const snapshot: AnnouncementRecord = { ...a, emailContent: null };
+    a.emailContent = snapshot;
     const people = await this.updatesAudience(scope);
     for (const p of people)
       this.outbox.push({
@@ -267,7 +272,6 @@ export class MemoryDb implements Db {
         error: null,
       });
     Object.assign(a, {
-      status: 'published',
       publishedAt: this.now().toISOString(),
       recipients: people.length,
       audience: scope,
@@ -300,7 +304,11 @@ export class MemoryDb implements Db {
         (o.status === 'failed' && now - (o.finishedAt ?? o.claimedAt) < day),
     ).length;
     const n = Math.max(0, Math.min(limit, dailyLimit - sentToday));
-    const claimed = this.outbox.filter((o) => o.status === 'pending').slice(0, n);
+    // Fresh emails first; ones being retried wait behind them.
+    const claimed = this.outbox
+      .filter((o) => o.status === 'pending')
+      .sort((x, y) => x.attempts - y.attempts || x.id - y.id)
+      .slice(0, n);
     for (const o of claimed) Object.assign(o, { status: 'sending', claimedAt: now });
     return claimed.map((o) => ({
       id: o.id,
@@ -322,6 +330,10 @@ export class MemoryDb implements Db {
     o.finishedAt = this.now().getTime();
     if (outcome === 'skipped') {
       o.status = 'skipped';
+      return;
+    }
+    if (outcome === 'later') {
+      o.status = 'pending';
       return;
     }
     o.attempts++;
@@ -357,7 +369,7 @@ export class MemoryDb implements Db {
   async upcomingAnnouncements(todayIso: string, limit: number): Promise<AnnouncementRecord[]> {
     return this.announcements
       .filter((a) => a.status === 'published' && (a.endDate ?? a.date) >= todayIso)
-      .sort((a, b) => a.date.localeCompare(b.date))
+      .sort((a, b) => a.date.localeCompare(b.date) || b.id - a.id)
       .slice(0, limit)
       .map((a) => ({ ...a }));
   }
@@ -376,7 +388,9 @@ export class MemoryDb implements Db {
     people: { name: string; email: string }[],
     label: string,
   ): Promise<{ added: number; existing: number; unsubscribed: number }> {
-    const onList = new Set((await this.updatesAudience()).map((p) => p.email));
+    // Imported membership does not depend on bookings: someone who booked is still added, so an
+    // announcement sent to imported people only reaches everyone in the sheet.
+    const onList = new Set(this.contacts.map((c) => c.email));
     const result = { added: 0, existing: 0, unsubscribed: 0 };
     for (const p of people) {
       if (this.unsubscribed.has(p.email)) result.unsubscribed++;

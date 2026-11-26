@@ -161,7 +161,8 @@ describe('importing people', () => {
       ],
     });
     expect(status).toBe(200);
-    expect(data).toEqual({ added: 1, existing: 1, unsubscribed: 1, invalid: 1 });
+    // Someone who booked is still added: imported membership does not depend on bookings.
+    expect(data).toEqual({ added: 2, existing: 0, unsubscribed: 1, invalid: 1 });
     const again = await call('POST', '/api/admin/contacts/import', {
       label: 'x',
       people: [{ name: 'New One', email: 'new@example.com' }],
@@ -203,12 +204,12 @@ describe('publishing and sending', () => {
 
   it('counts each list and both together, once per person', async () => {
     const { data } = await call('GET', '/api/admin/announcements');
-    expect(data.counts).toEqual({ all: 2, booked: 1, imported: 1 });
+    expect(data.counts).toEqual({ all: 2, booked: 1, imported: 2 });
   });
 
   it.each([
     ['booked', ['booked@example.com']],
-    ['imported', ['imp@example.com']],
+    ['imported', ['booked@example.com', 'imp@example.com']],
     ['all', ['booked@example.com', 'imp@example.com']],
   ])('sends to %s', async (audience, expected) => {
     const id = await draft();
@@ -314,13 +315,13 @@ describe('publishing and sending', () => {
     ).toMatchObject({
       subscribed: false,
     });
-    expect((await call('GET', '/api/admin/announcements')).data.counts.imported).toBe(0);
+    expect((await call('GET', '/api/admin/announcements')).data.counts.imported).toBe(1);
     expect(
       (await call('POST', '/api/preferences', { token, action: 'resubscribe' })).data,
     ).toMatchObject({
       subscribed: true,
     });
-    expect((await call('GET', '/api/admin/announcements')).data.counts.imported).toBe(1);
+    expect((await call('GET', '/api/admin/announcements')).data.counts.imported).toBe(2);
     expect((await call('POST', '/api/preferences', { token: 'nope' })).status).toBe(404);
     expect(mailer.sent[0]?.text).toContain(
       'Unsubscribe or manage your emails: https://justprayy.netlify.app/#/unsubscribe/',
@@ -650,6 +651,125 @@ describe('review fixes', () => {
     await db.publishAnnouncement(id, 'imported');
     expect(await db.claimOutbox(2, 2)).toHaveLength(2);
     expect(await db.claimOutbox(2, 2)).toHaveLength(0);
+  });
+
+  const fresh = async (emails: string[]) => {
+    const id = (
+      await db.createAnnouncement({
+        ...ANN,
+        endDate: null,
+        time: null,
+        theme: null,
+        imageUrl: null,
+        linkUrl: null,
+        linkLabel: null,
+      })
+    ).id;
+    for (const e of emails) db.contacts.push({ name: 'A', email: e, source: 'Sheet' });
+    await db.publishAnnouncement(id, 'imported');
+    return id;
+  };
+
+  it('sends the email as published, even after the published event is edited', async () => {
+    const id = await fresh(['a@x.co', 'b@x.co']);
+    await processOutbox({ db, mailer, siteUrl: 'https://jp.test', limit: 1, dailyLimit: 99 });
+    // The organiser edits the event for the home page before the rest of the list goes out.
+    await db.updateAnnouncement(id, {
+      ...ANN,
+      title: 'Edited title',
+      subject: 'Edited subject',
+      message: 'Edited message',
+      endDate: null,
+      time: null,
+      theme: null,
+      imageUrl: null,
+      linkUrl: null,
+      linkLabel: null,
+    });
+    await processOutbox({ db, mailer, siteUrl: 'https://jp.test', limit: 1, dailyLimit: 99 });
+    expect(mailer.sent.map((m) => m.subject)).toEqual([ANN.subject, ANN.subject]);
+    expect(mailer.sent[1]?.text).not.toContain('Edited');
+    expect((await db.announcementById(id))?.title).toBe('Edited title');
+  });
+
+  it('waits for the mail quota without using attempts, and stops the batch', async () => {
+    await fresh(['a@x.co', 'b@x.co', 'c@x.co']);
+    let calls = 0;
+    const full = {
+      kind: 'full',
+      send: () => {
+        calls++;
+        return Promise.reject(Object.assign(new Error('quota'), { status: 429 }));
+      },
+      isQuota: () => true,
+      canRetry: () => true,
+    };
+    for (let i = 0; i < 5; i++)
+      await processOutbox({
+        db,
+        mailer: full,
+        siteUrl: 'https://jp.test',
+        limit: 10,
+        dailyLimit: 99,
+      });
+    // One try per run, then the batch stops; nothing used an attempt or failed.
+    expect(calls).toBe(5);
+    expect(db.outbox.every((o) => o.status === 'pending' && o.attempts === 0)).toBe(true);
+    // Once the quota resets, they all go out.
+    await processOutbox({ db, mailer, siteUrl: 'https://jp.test', limit: 10, dailyLimit: 99 });
+    expect(mailer.sent.map((m) => m.to).sort()).toEqual(['a@x.co', 'b@x.co', 'c@x.co']);
+  });
+
+  it('starts no email after its time budget, and claims one at a time', async () => {
+    await fresh(['a@x.co', 'b@x.co']);
+    expect(
+      await processOutbox({
+        db,
+        mailer,
+        siteUrl: 'https://jp.test',
+        limit: 10,
+        dailyLimit: 99,
+        timeBudgetMs: 0,
+      }),
+    ).toEqual({ sent: 0, failed: 0 });
+    expect(db.outbox.every((o) => o.status === 'pending')).toBe(true);
+    const claims: number[] = [];
+    const claim = db.claimOutbox.bind(db);
+    db.claimOutbox = async (n, d) => {
+      claims.push(n);
+      return claim(n, d);
+    };
+    await processOutbox({
+      db,
+      mailer,
+      siteUrl: 'https://jp.test',
+      limit: 10,
+      dailyLimit: 99,
+      timeBudgetMs: 60_000,
+    });
+    expect(claims.every((n) => n === 1)).toBe(true);
+    expect(mailer.sent).toHaveLength(2);
+  });
+
+  it('publishes once when two publishes run at the same time', async () => {
+    const id = (
+      await db.createAnnouncement({
+        ...ANN,
+        endDate: null,
+        time: null,
+        theme: null,
+        imageUrl: null,
+        linkUrl: null,
+        linkLabel: null,
+      })
+    ).id;
+    db.contacts.push({ name: 'A', email: 'a@x.co', source: 'Sheet' });
+    const [one, two] = await Promise.all([
+      db.publishAnnouncement(id, 'imported'),
+      db.publishAnnouncement(id, 'imported'),
+    ]);
+    expect([one, two].filter(Boolean)).toHaveLength(1);
+    expect(db.outbox).toHaveLength(1);
   });
 
   it('still serves the gathering when the announcements query fails', async () => {

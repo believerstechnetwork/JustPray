@@ -362,7 +362,10 @@ test('organiser previews, tests and publishes an announcement that then shows on
   await page.getByRole('button', { name: 'Announcements', exact: true }).click();
   await page.getByRole('button', { name: 'New announcement' }).click();
   await page.getByLabel('Title', { exact: true }).fill(title);
-  await page.getByLabel('Date', { exact: true }).fill('2099-09-09');
+  // Today in Lagos: the earliest date the home page lists, and among same-day events the newest
+  // comes first, so this card is always among the three shown whatever earlier runs left behind.
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
+  await page.getByLabel('Date', { exact: true }).fill(today);
   await page.getByLabel('Venue to be announced').check();
   await page.getByLabel('Theme to be announced').check();
   await page.getByLabel('Summary', { exact: true }).fill('A weekend of prayer.');
@@ -379,6 +382,12 @@ test('organiser previews, tests and publishes an announcement that then shows on
 
   await page.getByRole('button', { name: 'Publish…' }).click();
   const dialog = page.getByRole('dialog');
+  // Keyboard users land in the dialog, and toggling a list keeps their place.
+  await expect(page.locator('#ann-c-h')).toBeFocused();
+  await dialog.getByLabel(/People who booked a seat/).focus();
+  await page.keyboard.press('Space');
+  await expect(dialog.getByLabel(/People who booked a seat/)).toBeFocused();
+  await page.keyboard.press('Space');
   await dialog.getByLabel(/People who booked a seat/).uncheck();
   await dialog.getByLabel(/People imported from Excel/).uncheck();
   await expect(dialog.getByRole('button', { name: 'Choose who to send to' })).toBeDisabled();

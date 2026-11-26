@@ -158,7 +158,7 @@ function peoplePanel(): string {
     .join('');
   return `<p class="ann-back"><button class="link" type="button" data-action="ann-back">${ICON.back}Back to announcements</button></p>
 <div class="block"><div class="block-h"><h2>Mailing list${list ? `<small> · ${people(list.length)}</small>` : ''}</h2><button class="btn small ind" type="button" data-action="ann-import">Import from Excel</button></div>
- ${list === null ? '<div class="spin"></div>' : list.length ? `<div class="tw"><table class="cards"><thead><tr><th>Name</th><th>Email</th><th>From</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="empty"><h3>No one yet</h3><p>People who book a seat and tick “Tell me about future gatherings” appear here, and so do people you import.</p></div>'}</div>`;
+ ${S.ann.peopleFailed ? `<p class="err" role="alert">${esc(S.ann.error || 'The mailing list did not load.')}</p><button class="btn small ghost" type="button" data-action="ann-people">Try again</button>` : list === null ? '<div class="spin"></div>' : list.length ? `<div class="tw"><table class="cards"><thead><tr><th>Name</th><th>Email</th><th>From</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="empty"><h3>No one yet</h3><p>People who book a seat and tick “Tell me about future gatherings” appear here, and so do people you import.</p></div>'}</div>`;
 }
 
 function importPanel(): string {
@@ -223,7 +223,7 @@ function editor(): string {
   const current = typeof a.editing === 'number' ? a.list?.find((x) => x.id === a.editing) : null;
   const published = current?.status === 'published';
   const seg = (name: string, value: string, label: string, on: boolean) =>
-    `<button type="button" data-ann-${name}="${value}" aria-pressed="${on}">${label}</button>`;
+    `<button type="button" id="ann-${name}-${value}" data-ann-${name}="${value}" aria-pressed="${on}">${label}</button>`;
   const photos = PHOTOS.map(([k, alt]) => {
     const url = photoUrl(k);
     return `<button type="button" data-ann-photo="${esc(url)}" aria-pressed="${f.imageUrl === url}" aria-label="Use photo: ${alt}"><img src="${IMG[k]}" alt=""></button>`;
@@ -253,7 +253,7 @@ function editor(): string {
       ? `<div class="ann-actions"><button class="btn ind" type="submit"${S.busy ? ' disabled' : ''}>Save changes</button></div>`
       : `<div class="ann-test"><label for="an-test">Send a test to</label><div><input id="an-test" type="email" value="${esc(a.testTo)}" placeholder="you@example.com"><button class="btn small ghost" type="button" data-action="ann-test"${S.busy ? ' disabled' : ''}>Send test</button></div></div>
   <div class="ann-aud">${ICON.users}<p>Publishing emails your mailing list (you choose who on the next step) and lists it on the home page until ${esc(until)}.</p></div>
-  <div class="ann-actions"><button class="btn ind" type="button" data-action="ann-publish"${S.busy ? ' disabled' : ''}>Publish…</button><button class="btn ghost" type="submit"${S.busy ? ' disabled' : ''}>Save draft</button>${typeof a.editing === 'number' ? '<button class="link" type="button" data-action="ann-delete">Delete draft</button>' : ''}</div>`
+  <div class="ann-actions"><button class="btn ind" type="button" id="ann-publish-btn" data-action="ann-publish"${S.busy ? ' disabled' : ''}>Publish…</button><button class="btn ghost" type="submit"${S.busy ? ' disabled' : ''}>Save draft</button>${typeof a.editing === 'number' ? '<button class="link" type="button" data-action="ann-delete">Delete draft</button>' : ''}</div>`
   }
  </form>
  <div class="ann-preview" aria-label="Preview"><div class="ann-tabs"><div class="seg" role="group" aria-label="Preview of">${seg('view', 'email', 'Email', a.view === 'email')}${seg('view', 'site', 'On the site', a.view === 'site')}</div>
@@ -280,14 +280,14 @@ function confirmDialog(): string {
   const a = S.ann;
   const n = sendCount();
   const box = (k: 'booked' | 'imported', label: string, count: number) =>
-    `<label class="check"><input type="checkbox" data-ann-send="${k}"${a.send[k] ? ' checked' : ''}><span>${label} <b>(${count.toLocaleString('en-GB')})</b></span></label>`;
+    `<label class="check"><input type="checkbox" id="ann-send-${k}" data-ann-send="${k}"${a.send[k] ? ' checked' : ''}><span>${label} <b>(${count.toLocaleString('en-GB')})</b></span></label>`;
   const days = Math.ceil(n / Math.max(1, a.dailyLimit));
-  return `<div class="share-bd"><div class="share" role="dialog" aria-modal="true" aria-labelledby="ann-c-h"><h3 id="ann-c-h">Publish “${esc(a.form.title)}”?</h3>
+  return `<div class="share-bd"><div class="share" role="dialog" aria-modal="true" aria-labelledby="ann-c-h"><h3 id="ann-c-h" tabindex="-1">Publish “${esc(a.form.title)}”?</h3>
   <p>Send the email to:</p>
   <div class="ann-send">${box('booked', 'People who booked a seat and asked for updates', a.counts.booked)}${box('imported', 'People imported from Excel', a.counts.imported)}</div>
   <p>It will be emailed to <b>${people(n)}</b> and appear on the home page.${days > 1 ? ` To stay within the daily email limit, sending takes about ${days} days.` : ''} An email cannot be called back once sent.</p>
   ${a.error ? `<p class="err" role="alert">${esc(a.error)}</p>` : ''}
-  <div class="actions"><button class="btn ind" type="button" data-action="ann-confirm"${S.busy || n === 0 ? ' disabled' : ''}>${S.busy ? 'Publishing…' : n === 0 ? 'Choose who to send to' : `Publish and email ${n.toLocaleString('en-GB')}`}</button><button class="link" type="button" data-action="ann-cancel">Cancel</button></div></div></div>`;
+  <div class="actions"><button class="btn ind" type="button" data-action="ann-confirm"${S.busy || n === 0 ? ' disabled' : ''}>${S.busy ? 'Publishing…' : n === 0 ? 'Choose who to send to' : `Publish and email ${n.toLocaleString('en-GB')}`}</button><button class="link" type="button" data-action="ann-cancel" data-dialog-close>Cancel</button></div></div></div>`;
 }
 
 export function announcementsTab(): string {

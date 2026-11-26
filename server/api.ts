@@ -776,6 +776,8 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
               siteUrl,
               limit: 10,
               dailyLimit: deps.dailyLimit ?? DAILY_LIMIT,
+              // Stay well inside the function's time limit; the scheduled sender does the rest.
+              timeBudgetMs: 8_000,
               log,
             }).catch((e: unknown) => log('First announcement batch failed', e)),
           );

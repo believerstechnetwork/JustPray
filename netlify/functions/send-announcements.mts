@@ -16,8 +16,10 @@ export default async (): Promise<Response> => {
     db: new SupabaseDb(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY),
     mailer,
     siteUrl: env.SITE_URL || env.URL || PRODUCTION_URL,
-    // About 20 emails fit comfortably in one run's time limit.
     limit: 20,
+    // Scheduled functions stop at 30 seconds, and one email can take up to 10. Start no new email
+    // after 15 seconds, so every email this run claims is actually tried.
+    timeBudgetMs: 15_000,
     dailyLimit: Number(env.ANNOUNCE_DAILY_LIMIT) || DAILY_LIMIT,
   });
   return new Response(JSON.stringify(result));

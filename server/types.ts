@@ -127,6 +127,9 @@ export interface AnnouncementRecord extends AnnouncementFields {
   /** People it was sent to when published. */
   recipients: number;
   createdAt: string;
+  /** The email exactly as published. Later batches send this, so edits to the published
+   *  event (which change the home page) never change what the rest of the list receives. */
+  emailContent?: AnnouncementFields | null;
 }
 
 /** Storage used by the API. `SupabaseDb` in production, `MemoryDb` in tests and local dev. */
@@ -177,7 +180,9 @@ export interface Db {
   claimOutbox(limit: number, dailyLimit: number): Promise<OutboxItem[]>;
   /** Record what happened to one claimed email: `sent`; `retry` (nothing went out: back in the
    *  queue, failed after 3 attempts in all); `failed` (closed, never retried, because it may
-   *  have gone out or can never go); or `skipped` (closed unsent: the person unsubscribed). */
+   *  have gone out or can never go); `skipped` (closed unsent: the person unsubscribed); or
+   *  `later` (not sent because the mail service's quota is used up: back in the queue without
+   *  using an attempt). */
   finishOutbox(id: number, outcome: OutboxOutcome, error?: string): Promise<void>;
   isUnsubscribed(email: string): Promise<boolean>;
   /** Unsubscribe the person behind an unsubscribe link. Returns their email, or null. */
@@ -212,7 +217,7 @@ export interface Email {
 export type AudienceScope = 'all' | 'booked' | 'imported';
 
 /** What happened to one queued announcement email. See Db.finishOutbox. */
-export type OutboxOutcome = 'sent' | 'retry' | 'failed' | 'skipped';
+export type OutboxOutcome = 'sent' | 'retry' | 'failed' | 'skipped' | 'later';
 export const AUDIENCE_SCOPES: readonly AudienceScope[] = ['all', 'booked', 'imported'];
 
 /** Someone who gets announcements, and how they joined the list. */
@@ -249,6 +254,9 @@ export interface Mailer {
   /** True when a failed send certainly delivered nothing (or the service drops repeats), so
    *  sending it again cannot reach the person twice. Without it, a failed send is never retried. */
   canRetry?(error: unknown): boolean;
+  /** True when the service refused because its sending quota is used up for now. Those emails
+   *  wait for the quota to reset instead of using up their attempts. */
+  isQuota?(error: unknown): boolean;
 }
 
 export interface BankDetails {

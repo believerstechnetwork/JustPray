@@ -1,5 +1,5 @@
 import { announcementEmail } from './emails';
-import type { AnnouncementRecord, Db, Mailer } from './types';
+import type { AnnouncementRecord, Db, Mailer, OutboxItem } from './types';
 
 /* Announcement emails wait in an outbox and go out in small batches: one right after publishing,
    then one every couple of minutes from the scheduled sender (netlify/functions/send-announcements).
@@ -14,42 +14,49 @@ export interface OutboxDeps {
   limit: number;
   /** Most emails in any 24 hours. */
   dailyLimit: number;
+  /** Stop starting new emails after this many milliseconds. With it, emails are claimed one at
+   *  a time, so a run that is about to hit its platform time limit never leaves claimed emails it
+   *  did not try (those would be given up as "did not finish" instead of sent later). */
+  timeBudgetMs?: number;
   log?: (message: string, error?: unknown) => void;
 }
+
+type Result = 'sent' | 'failed' | 'skipped' | 'quota';
 
 export async function processOutbox(deps: OutboxDeps): Promise<{ sent: number; failed: number }> {
   const { db, mailer, limit, dailyLimit } = deps;
   const site = deps.siteUrl.replace(/\/+$/, '');
   const log = deps.log ?? ((m: string, e?: unknown) => console.error(m, e ?? ''));
-  const items = await db.claimOutbox(limit, dailyLimit);
   const announcements = new Map<number, AnnouncementRecord | null>();
-  let sent = 0;
-  let failed = 0;
-  for (const item of items) {
+  const started = Date.now();
+  const timed = deps.timeBudgetMs !== undefined;
+  const timeUp = (): boolean => timed && Date.now() - started >= (deps.timeBudgetMs ?? 0);
+
+  async function sendOne(item: OutboxItem): Promise<Result> {
     // Before sending: load the announcement and check the person is still subscribed. If either
     // lookup fails, nothing was sent, so the email goes back in the queue and the batch goes on.
-    let a: AnnouncementRecord | null | undefined;
+    let record: AnnouncementRecord | null | undefined;
     try {
       if (!announcements.has(item.announcementId))
         announcements.set(item.announcementId, await db.announcementById(item.announcementId));
-      a = announcements.get(item.announcementId);
-      if (a && (await db.isUnsubscribed(item.email))) {
+      record = announcements.get(item.announcementId);
+      if (record && (await db.isUnsubscribed(item.email))) {
         await db.finishOutbox(item.id, 'skipped', 'unsubscribed');
-        continue;
+        return 'skipped';
       }
     } catch (e) {
       log(`Could not prepare outbox item ${item.id}; it will be tried again`, e);
       await db
         .finishOutbox(item.id, 'retry', 'Could not check the announcement or subscription')
         .catch((err: unknown) => log(`Could not requeue outbox item ${item.id}`, err));
-      failed++;
-      continue;
+      return 'failed';
     }
-    if (!a) {
+    if (!record) {
       await db.finishOutbox(item.id, 'failed', 'announcement not found');
-      failed++;
-      continue;
+      return 'failed';
     }
+    // The email as it was published; edits made since then only change the home page.
+    const a = record.emailContent ?? record;
     const unsubscribeUrl = `${site}/#/unsubscribe/${item.unsubToken}`;
     const email = announcementEmail({
       announcement: {
@@ -78,11 +85,20 @@ export async function processOutbox(deps: OutboxDeps): Promise<{ sent: number; f
         idempotencyKey: `announcement-send-${item.id}`,
       });
     } catch (e) {
+      const reason = e instanceof Error ? e.message.slice(0, 160) : 'error';
+      // The mail service's quota is used up: nothing went out. It waits in the queue, without
+      // using an attempt, and the batch stops until a later run.
+      if (mailer.isQuota?.(e)) {
+        log(`Mail quota reached (${mailer.kind}); outbox item ${item.id} waits`, e);
+        await db
+          .finishOutbox(item.id, 'later', `Waiting for the mail quota: ${reason}`)
+          .catch((err: unknown) => log(`Could not requeue outbox item ${item.id}`, err));
+        return 'quota';
+      }
       // Retry only when the mail service certainly did not take the email. A timeout may come
       // after it was accepted, so that one is closed as failed rather than risk a second copy.
       const retry = mailer.canRetry?.(e) ?? false;
-      log(`Announcement ${a.id} to outbox item ${item.id} failed (${mailer.kind})`, e);
-      const reason = e instanceof Error ? e.message.slice(0, 160) : 'error';
+      log(`Announcement ${record.id} to outbox item ${item.id} failed (${mailer.kind})`, e);
       await db
         .finishOutbox(
           item.id,
@@ -90,13 +106,11 @@ export async function processOutbox(deps: OutboxDeps): Promise<{ sent: number; f
           retry ? reason : `${reason} (may have been delivered; not retried)`,
         )
         .catch((err: unknown) => log(`Could not record failure of outbox item ${item.id}`, err));
-      failed++;
-      continue;
+      return 'failed';
     }
     // Delivered. Recording it must never turn into a retry, which would send it twice: try a
     // few times, and if it still fails leave the row as claimed. An unfinished claim is closed
     // as failed (never sent again) once it is 10 minutes old.
-    sent++;
     for (let attempt = 1; ; attempt++) {
       try {
         await db.finishOutbox(item.id, 'sent');
@@ -108,6 +122,34 @@ export async function processOutbox(deps: OutboxDeps): Promise<{ sent: number; f
         }
         await new Promise((r) => setTimeout(r, 300 * attempt));
       }
+    }
+    return 'sent';
+  }
+
+  let sent = 0;
+  let failed = 0;
+  let done = 0;
+  let stop = false;
+  const tried = new Set<number>();
+  while (done < limit && !stop && !timeUp()) {
+    const items = await db.claimOutbox(timed ? 1 : limit - done, dailyLimit);
+    if (!items.length) break;
+    for (const item of items) {
+      // After the quota is reached, or when the queue hands back an email this run already
+      // tried (only retries are left), put it back untried for a later run.
+      if (stop || tried.has(item.id)) {
+        stop = true;
+        await db
+          .finishOutbox(item.id, 'later', 'Not tried in this run')
+          .catch((err: unknown) => log(`Could not requeue outbox item ${item.id}`, err));
+        continue;
+      }
+      tried.add(item.id);
+      done++;
+      const result = await sendOne(item);
+      if (result === 'sent') sent++;
+      else if (result === 'failed') failed++;
+      else if (result === 'quota') stop = true;
     }
   }
   return { sent, failed };

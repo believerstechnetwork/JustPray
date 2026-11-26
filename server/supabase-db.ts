@@ -101,6 +101,10 @@ const toAnnouncement = (r: Row): AnnouncementRecord => ({
       : null,
   recipients: n(r.recipients),
   createdAt: s(r.created_at),
+  emailContent:
+    r.email_content && typeof r.email_content === 'object'
+      ? toAnnouncement(r.email_content as Row)
+      : null,
 });
 
 const announcementRow = (f: AnnouncementFields) => ({
@@ -491,6 +495,7 @@ export class SupabaseDb implements Db {
         .eq('status', 'published')
         .or(`end_date.gte.${todayIso},and(end_date.is.null,date.gte.${todayIso})`)
         .order('date', { ascending: true })
+        .order('id', { ascending: false })
         .limit(limit),
     ) as Row[];
     return rows.map(toAnnouncement);

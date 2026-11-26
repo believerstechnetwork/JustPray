@@ -527,13 +527,14 @@ async function annAction(action: string, el: HTMLElement): Promise<void> {
     case 'ann-people':
       a.panel = 'people';
       a.people = null;
+      a.peopleFailed = false;
       a.error = '';
       render();
       try {
         a.people = (await api.audience()).people;
       } catch (e) {
         a.error = errorMessage(e);
-        a.people = [];
+        a.peopleFailed = true;
       }
       return render();
     case 'ann-import':
@@ -567,11 +568,16 @@ async function annAction(action: string, el: HTMLElement): Promise<void> {
         a.confirming = true;
         a.send = { booked: true, imported: true };
       }
-      return render();
+      render();
+      // Into the dialog, so keyboard and screen-reader users start there.
+      if (a.confirming) document.getElementById('ann-c-h')?.focus();
+      return;
     }
     case 'ann-cancel':
       a.confirming = false;
-      return render();
+      render();
+      document.getElementById('ann-publish-btn')?.focus();
+      return;
     case 'ann-confirm': {
       if (S.busy || typeof a.editing !== 'number') return;
       S.busy = true;
@@ -599,13 +605,20 @@ async function annAction(action: string, el: HTMLElement): Promise<void> {
       return render();
     }
     case 'ann-delete': {
-      if (typeof a.editing !== 'number' || !window.confirm('Delete this draft?')) return;
+      // Keep the id and editor that asked: the organiser may open another draft meanwhile.
+      const id = a.editing;
+      if (typeof id !== 'number' || S.busy || !window.confirm('Delete this draft?')) return;
+      const editor = annEditor;
+      S.busy = true;
+      render();
       try {
-        await api.deleteAnnouncement(a.editing);
-        a.list = (a.list ?? []).filter((x) => x.id !== a.editing);
-        a.editing = null;
+        await api.deleteAnnouncement(id);
+        a.list = (a.list ?? []).filter((x) => x.id !== id);
+        if (editor === annEditor) a.editing = null;
       } catch (e) {
-        a.error = errorMessage(e);
+        if (editor === annEditor) a.error = errorMessage(e);
+      } finally {
+        S.busy = false;
       }
       return render();
     }
@@ -873,6 +886,36 @@ async function submitLogin(data: FormData): Promise<void> {
   render();
   page.querySelector<HTMLInputElement>('#ap')?.focus();
 }
+
+/* An open dialog keeps keyboard focus inside it: Tab cycles through its controls and Escape
+   closes it. */
+document.addEventListener('keydown', (e) => {
+  const dialog = document.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]');
+  if (!dialog) return;
+  if (e.key === 'Escape') {
+    if (S.busy) return;
+    e.preventDefault();
+    dialog.querySelector<HTMLElement>('[data-dialog-close]')?.click();
+    return;
+  }
+  if (e.key !== 'Tab') return;
+  const items = [
+    ...dialog.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), a[href]',
+    ),
+  ];
+  const first = items[0];
+  const last = items[items.length - 1];
+  if (!first || !last) return;
+  const inside = dialog.contains(document.activeElement);
+  if (e.shiftKey && (document.activeElement === first || !inside)) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && (document.activeElement === last || !inside)) {
+    e.preventDefault();
+    first.focus();
+  }
+});
 
 document.addEventListener('submit', (e) => {
   const form = e.target as HTMLFormElement;

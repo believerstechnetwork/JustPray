@@ -90,8 +90,12 @@ create table if not exists public.announcements (
   sent_count integer not null default 0,
   recipients integer not null default 0,
   audience text check (audience in ('all', 'booked', 'imported')),
+  -- The email exactly as published; every batch sends this, so later edits to the published
+  -- event change the home page only.
+  email_content jsonb,
   created_at timestamptz not null default now()
 );
+alter table public.announcements add column if not exists email_content jsonb;
 
 -- People who unsubscribed from announcements. They are never emailed one again.
 create table if not exists public.unsubscribes (
@@ -199,7 +203,9 @@ begin
   get diagnostics queued = row_count;
   return query
     update public.announcements a
-    set status = 'published', published_at = now(), recipients = queued, audience = p_scope
+    set status = 'published', published_at = now(), recipients = queued, audience = p_scope,
+        email_content = (select to_jsonb(x) - 'email_content' from public.announcements x
+                         where x.id = p_id)
     where a.id = p_id
     returning a.*;
 end;
@@ -243,7 +249,8 @@ begin
     where s.id in (
       select s2.id from public.announcement_sends s2
       where s2.status = 'pending'
-      order by s2.id
+      -- Fresh emails first; ones being retried wait behind them.
+      order by s2.attempts, s2.id
       limit take
       for update skip locked
     )
@@ -255,7 +262,8 @@ $$;
 --   sent     delivered, and counted on the announcement;
 --   retry    nothing went out: back in the queue, failed after 3 attempts in all;
 --   failed   closed and never retried (it may have gone out, or can never go);
---   skipped  closed unsent, because the person unsubscribed.
+--   skipped  closed unsent, because the person unsubscribed;
+--   later    not sent because the mail service's quota is used up: back in the queue, no attempt used.
 -- Only a row still claimed for sending changes.
 drop function if exists public.finish_announcement_send(bigint, boolean, text);
 drop function if exists public.finish_announcement_send(bigint, boolean, text, boolean);
@@ -290,6 +298,11 @@ begin
         error = left(p_error, 200),
         finished_at = now(),
         status = case when s.attempts + 1 >= 3 then 'failed' else 'pending' end
+    where s.id = p_id and s.status = 'sending';
+  elsif p_outcome = 'later' then
+    -- The mail service's quota is used up: back in the queue, without using an attempt.
+    update public.announcement_sends s
+    set status = 'pending', error = left(p_error, 200), finished_at = now()
     where s.id = p_id and s.status = 'sending';
   elsif p_outcome = 'failed' then
     update public.announcement_sends s
@@ -377,7 +390,6 @@ begin
   insert into public.contacts (name, email, source)
   select i.name, i.email, p_label from import_in i
   where not exists (select 1 from public.unsubscribes u where u.email = i.email)
-    and not exists (select 1 from public.reservations r where r.email = i.email and r.updates)
   on conflict (email) do nothing;
   get diagnostics inserted = row_count;
   return query select inserted, total - inserted - blocked, blocked;

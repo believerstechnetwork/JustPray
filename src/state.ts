@@ -78,6 +78,8 @@ export interface UiState {
     send: { booked: boolean; imported: boolean };
     /** The mailing list, when it is open. */
     people: AudienceMember[] | null;
+    /** The mailing list failed to load (shown with a retry, never as an empty list). */
+    peopleFailed: boolean;
     /** What the list view shows: the announcements, the mailing list, or an import. */
     panel: 'list' | 'people' | 'import';
     /** An Excel or CSV file read in the browser, waiting to be confirmed. */
@@ -160,6 +162,7 @@ export const S: UiState = {
     dailyLimit: 350,
     send: { booked: true, imported: true },
     people: null,
+    peopleFailed: false,
     panel: 'list',
     importing: null,
     form: blankAnnouncement(),
