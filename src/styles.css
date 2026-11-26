@@ -1,15 +1,21 @@
-/* Just Pray: Adire + gold.
-   Indigo resist cloth made from the BTN logo's dots and lines; gold is the light of a lit seat.
-   Gold means one thing only: a seat, the action that lights it, and "Free". */
+/* Just Pray: Adire + ivory.
+   Indigo resist cloth made from the BTN logo's dots and lines; warm ivory is the light of a lit
+   seat, like cream paper against ink. On the cloth the main action is ivory; on light pages it is
+   indigo with ivory text. Ivory is never used for words on a light background. */
 
 :root {
   --indigo: #0e2766;
   --indigo-2: #16378c;
   --blue: #0a6fc2;
-  --gold: #f5b841;
-  --gold-ink: #3a2600;
-  --gold-t: #fff4d6;
-  --gold-line: #ebcb7e;
+  --ivory: #efe4cf;
+  --ivory-2: #f8f1e3;
+  --ivory-ink: #0e2766;
+  --ivory-t: #f7f0e2;
+  --ivory-line: #e2d3b4;
+  /* The main action on light surfaces: indigo with ivory text (ivory on dark in dark mode). */
+  --cta: var(--indigo);
+  --cta-hover: var(--indigo-2);
+  --cta-ink: #f3ead9;
 
   --canvas: #f4f8fd;
   --card: #ffffff;
@@ -44,8 +50,11 @@ html[data-mode='dark'] {
   --mute-t: #17284f;
   --blue: #7ab9f5;
   --cloth: #12307a;
-  --gold-t: #3a2c0c;
-  --gold-line: #7a5e1c;
+  --ivory-t: #2b2820;
+  --ivory-line: #5e5440;
+  --cta: var(--ivory);
+  --cta-hover: var(--ivory-2);
+  --cta-ink: var(--indigo);
   --shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 24px 48px -24px rgb(0 0 0 / 60%);
   --ok: #5fd39c;
   --warn: #f5c25a;
@@ -101,8 +110,8 @@ button {
   border: 0;
 }
 ::selection {
-  background: var(--gold);
-  color: var(--gold-ink);
+  background: #e6d7b8;
+  color: #0d1a3a;
 }
 :root {
   --focus: #0a6fc2;
@@ -111,7 +120,7 @@ html[data-mode='dark'] {
   --focus: #7ab9f5;
 }
 .cloth {
-  --focus: var(--gold);
+  --focus: var(--ivory);
 }
 /* White surfaces that sit on the cloth go back to the light-surface ring. */
 .slip,
@@ -144,8 +153,8 @@ table {
   left: 16px;
   top: -60px;
   z-index: 50;
-  background: var(--gold);
-  color: var(--gold-ink);
+  background: var(--ivory);
+  color: var(--ivory-ink);
   padding: 10px 16px;
   border-radius: 10px;
   font-weight: 600;
@@ -188,9 +197,23 @@ table {
   width: 100%;
   height: 100%;
 }
+/* The pattern fades out behind the headline and paragraph, so the words sit on calm indigo. */
 .fade > .pat {
-  -webkit-mask-image: linear-gradient(90deg, rgb(0 0 0 / 22%), rgb(0 0 0 / 35%) 42%, #000 85%);
-  mask-image: linear-gradient(90deg, rgb(0 0 0 / 22%), rgb(0 0 0 / 35%) 42%, #000 85%);
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent,
+    transparent 46%,
+    rgb(0 0 0 / 55%) 62%,
+    #000 90%
+  );
+  mask-image: linear-gradient(90deg, transparent, transparent 46%, rgb(0 0 0 / 55%) 62%, #000 90%);
+}
+@media (max-width: 760px) {
+  /* On phones the words span the width, so the pattern only shows faintly at the far edge. */
+  .fade > .pat {
+    -webkit-mask-image: linear-gradient(90deg, transparent 35%, rgb(0 0 0 / 30%));
+    mask-image: linear-gradient(90deg, transparent 35%, rgb(0 0 0 / 30%));
+  }
 }
 
 /* ---------- buttons and links ---------- */
@@ -220,13 +243,37 @@ table {
   width: 20px;
   height: 20px;
 }
-.btn.gold {
-  background: var(--gold);
-  color: var(--gold-ink);
-  box-shadow: 0 10px 24px -12px rgb(245 184 65 / 80%);
+.btn.primary {
+  background: var(--cta);
+  color: var(--cta-ink);
+  box-shadow: 0 10px 24px -14px rgb(14 39 102 / 55%);
 }
-.btn.gold:hover {
-  background: #f7c35e;
+.btn.primary:hover {
+  background: var(--cta-hover);
+}
+/* On the indigo cloth the main action turns ivory... */
+.cloth .btn.primary {
+  background: var(--ivory);
+  color: var(--ivory-ink);
+  box-shadow: 0 10px 24px -14px rgb(0 0 0 / 50%);
+}
+.cloth .btn.primary:hover {
+  background: var(--ivory-2);
+}
+/* ...except on the light cards that sit on it. */
+.slip .btn.primary,
+.panel .btn.primary,
+.acct .btn.primary,
+.share .btn.primary {
+  background: var(--cta);
+  color: var(--cta-ink);
+  box-shadow: 0 10px 24px -14px rgb(14 39 102 / 55%);
+}
+.slip .btn.primary:hover,
+.panel .btn.primary:hover,
+.acct .btn.primary:hover,
+.share .btn.primary:hover {
+  background: var(--cta-hover);
 }
 .btn.ind {
   background: var(--indigo);
@@ -272,7 +319,7 @@ html[data-mode='dark'] .btn.ind {
   align-items: center;
 }
 .link:hover {
-  text-decoration-color: var(--gold);
+  text-decoration-thickness: 2px;
 }
 .actions {
   display: flex;
@@ -283,7 +330,7 @@ html[data-mode='dark'] .btn.ind {
 
 /* ---------- banner, nav ---------- */
 .demo {
-  background: var(--gold-t);
+  background: var(--ivory-t);
   color: var(--ink);
   text-align: center;
   padding: 10px 16px;
@@ -331,7 +378,7 @@ html[data-mode='dark'] .btn.ind {
 }
 .nav-links [aria-current='page'] {
   text-decoration: underline;
-  text-decoration-color: var(--gold);
+  text-decoration-color: var(--ivory);
   text-decoration-thickness: 2px;
   text-underline-offset: 9px;
 }
@@ -340,11 +387,28 @@ html[data-mode='dark'] .btn.ind {
 }
 .menu-btn {
   display: none;
+  align-items: center;
+  gap: 8px;
   margin-left: auto;
   font-weight: 600;
   min-height: 44px;
-  padding: 0 4px;
+  padding: 0 16px 0 12px;
+  border-radius: 999px;
   color: #fff;
+  background: rgb(255 255 255 / 8%);
+  box-shadow: inset 0 0 0 1.5px rgb(239 228 207 / 45%);
+}
+.menu-btn svg {
+  width: 20px;
+  height: 20px;
+  color: var(--ivory);
+}
+.menu-btn[aria-expanded='true'] {
+  background: var(--ivory);
+  color: var(--ivory-ink);
+}
+.menu-btn[aria-expanded='true'] svg {
+  color: var(--ivory-ink);
 }
 .mobile-nav {
   display: none;
@@ -371,6 +435,11 @@ html[data-mode='dark'] .btn.ind {
   height: 100%;
   object-fit: cover;
   border-radius: 14px;
+}
+/* A light, even grade so stage lighting in the photos sits calmly with the indigo and ivory. */
+.frame img,
+.pframe img {
+  filter: saturate(0.82) contrast(1.02);
 }
 .tag {
   position: absolute;
@@ -433,7 +502,7 @@ html[data-mode='dark'] .btn.ind {
 .hero h1 em,
 .done h1 em {
   font-style: normal;
-  color: var(--gold);
+  color: var(--ivory);
 }
 .lede {
   font-size: 20px;
@@ -443,6 +512,9 @@ html[data-mode='dark'] .btn.ind {
 }
 .hero .link {
   margin-top: 26px;
+  font-weight: 700;
+  text-decoration-thickness: 2px;
+  text-decoration-color: var(--ivory);
 }
 .hero-photo {
   position: relative;
@@ -530,8 +602,8 @@ html[data-mode='dark'] .btn.ind {
 .notice {
   border-radius: 14px;
   padding: 14px 18px;
-  background: var(--gold-t);
-  box-shadow: inset 0 0 0 1.5px var(--gold-line);
+  background: var(--ivory-t);
+  box-shadow: inset 0 0 0 1.5px var(--ivory-line);
   font-size: 15px;
   font-weight: 600;
   margin: 0 0 18px;
@@ -552,7 +624,7 @@ html[data-mode='dark'] .btn.ind {
   accent-color: var(--indigo);
 }
 html[data-mode='dark'] .check input {
-  accent-color: var(--gold);
+  accent-color: var(--ivory);
 }
 .fine {
   font-size: 14px;
@@ -647,13 +719,13 @@ html[data-mode='dark'] .date-big .day {
   box-shadow: inset 0 0 0 1.5px rgb(255 255 255 / 50%);
 }
 .wall .n.lit {
-  background: var(--gold);
-  box-shadow: 0 0 12px rgb(245 184 65 / 45%);
+  background: var(--ivory);
+  box-shadow: 0 0 12px rgb(239 228 207 / 45%);
   animation: light 0.42s var(--ease) both;
   animation-delay: calc(var(--i, 0) * 14ms);
 }
 .wall .n.mine {
-  outline: 2px solid var(--gold);
+  outline: 2px solid var(--ivory);
   outline-offset: 4px;
 }
 @keyframes light {
@@ -726,8 +798,8 @@ h2.big {
   height: 52px;
   padding: 8px;
   border-radius: 14px;
-  border: 1.5px dashed rgb(245 184 65 / 70%);
-  color: var(--gold);
+  border: 1.5px dashed rgb(239 228 207 / 70%);
+  color: var(--ivory);
 }
 .how b {
   display: block;
@@ -784,7 +856,7 @@ h2.big {
   display: block;
   font: 400 16px var(--body);
   font-style: normal;
-  color: var(--gold);
+  color: var(--ivory);
   margin-top: 24px;
 }
 .close {
@@ -918,8 +990,8 @@ h2.big {
   box-shadow: none;
 }
 html[data-mode='dark'] .amounts button[aria-pressed='true'] {
-  background: var(--gold);
-  color: var(--gold-ink);
+  background: var(--ivory);
+  color: var(--ivory-ink);
 }
 .amounts.cur {
   grid-template-columns: 1fr 1fr;
@@ -973,8 +1045,8 @@ html[data-mode='dark'] .amounts.cur button[aria-pressed='true'] {
   background: rgb(10 111 194 / 16%);
 }
 .kv dd.ref {
-  background: var(--gold-t);
-  box-shadow: inset 0 0 0 1.5px var(--gold-line);
+  background: var(--ivory-t);
+  box-shadow: inset 0 0 0 1.5px var(--ivory-line);
   border-radius: 12px;
   padding-left: 12px;
   padding-right: 12px;
@@ -1071,8 +1143,8 @@ html[data-mode='dark'] .amounts.cur button[aria-pressed='true'] {
   position: absolute;
   right: 20px;
   bottom: 18px;
-  background: var(--gold);
-  color: var(--gold-ink);
+  background: var(--ivory);
+  color: var(--ivory-ink);
   border-radius: 12px;
   padding: 10px 16px 8px;
   text-align: center;
@@ -1166,7 +1238,7 @@ html[data-mode='dark'] .amounts.cur button[aria-pressed='true'] {
 }
 .spin.on-cloth {
   border-color: rgb(255 255 255 / 20%);
-  border-top-color: var(--gold);
+  border-top-color: var(--ivory);
 }
 /* A cancelled seat: the pass stays, quietly greyed, so people can see which seat it was. */
 .pass.void .top {
@@ -1226,7 +1298,7 @@ html[data-mode='dark'] .amounts.cur button[aria-pressed='true'] {
   font: 600 12px var(--body);
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--gold);
+  color: var(--ivory);
   padding: 0 10px 20px;
 }
 .side .t {
@@ -1246,7 +1318,7 @@ html[data-mode='dark'] .amounts.cur button[aria-pressed='true'] {
 .side .t[aria-current='page'] {
   background: rgb(255 255 255 / 10%);
   color: #fff;
-  box-shadow: inset 0 0 0 1.5px rgb(245 184 65 / 55%);
+  box-shadow: inset 0 0 0 1.5px rgb(239 228 207 / 55%);
 }
 .side .gap {
   flex: 1;
@@ -1304,7 +1376,7 @@ html[data-mode='dark'] .amounts.cur button[aria-pressed='true'] {
 .bar i {
   display: block;
   height: 100%;
-  background: var(--gold);
+  background: var(--blue);
   border-radius: 4px;
 }
 .block {
@@ -1356,9 +1428,11 @@ html[data-mode='dark'] .amounts.cur button[aria-pressed='true'] {
 html[data-mode='dark'] .chart i {
   background: #3c66c8;
 }
-.chart .max i,
+.chart .max i {
+  background: var(--blue);
+}
 html[data-mode='dark'] .chart .max i {
-  background: var(--gold);
+  background: var(--ivory);
 }
 .axis {
   display: grid;
@@ -1596,7 +1670,7 @@ td.acts .btn + .btn {
   font: 700 14px var(--body);
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--gold);
+  color: var(--ivory);
 }
 .up-date .d {
   font: 400 clamp(76px, 8vw, 112px) / 0.9 var(--display);
@@ -1616,7 +1690,7 @@ td.acts .btn + .btn {
   height: 2px;
   margin-top: 18px;
   border-radius: 2px;
-  background: var(--gold);
+  background: var(--ivory);
   order: 3;
 }
 /* On a picture the date becomes a small white tag in the corner. */
@@ -2143,7 +2217,7 @@ html[data-mode='dark'] .pill.on {
   opacity: 1;
   box-shadow:
     0 0 0 2px var(--card),
-    0 0 0 4px var(--gold);
+    0 0 0 4px var(--cta);
 }
 .share .thumbs img {
   width: 100%;
@@ -2214,7 +2288,8 @@ html[data-mode='dark'] .share .x {
     display: none;
   }
   .menu-btn {
-    display: block;
+    display: inline-flex;
+    flex: none;
   }
   .mobile-nav.open {
     display: grid;
@@ -2238,6 +2313,18 @@ html[data-mode='dark'] .share .x {
   }
   .mobile-nav button:hover {
     background: var(--mute-t);
+  }
+  /* The main action closes the menu as a full-width button. */
+  .mobile-nav .btn.primary {
+    justify-content: center;
+    margin-top: 8px;
+    min-height: 52px;
+    background: var(--cta);
+    color: var(--cta-ink);
+    box-shadow: 0 10px 24px -14px rgb(14 39 102 / 55%);
+  }
+  .mobile-nav .btn.primary:hover {
+    background: var(--cta-hover);
   }
   .site {
     position: relative;
@@ -2295,6 +2382,7 @@ html[data-mode='dark'] .share .x {
   .brand {
     gap: 12px;
     font-size: 21px;
+    white-space: nowrap;
   }
   .brand .logo {
     height: 38px;
@@ -2572,5 +2660,19 @@ html[data-mode='dark'] .share .x {
   *::after {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+@media (max-width: 370px) {
+  /* Narrow phones: the menu button keeps its icon and drops the word, so the name fits. */
+  .menu-btn {
+    padding: 0 12px;
+  }
+  .menu-btn span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
   }
 }

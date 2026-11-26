@@ -5,10 +5,12 @@ colors:
   indigo: '#0e2766'
   indigo-raised: '#16378c'
   btn-blue: '#0a6fc2'
-  seat-gold: '#f5b841'
-  gold-ink: '#3a2600'
-  gold-tint: '#fff4d6'
-  gold-line: '#ebcb7e'
+  ivory: '#efe4cf'
+  ivory-hover: '#f8f1e3'
+  ivory-ink: '#0e2766'
+  ivory-tint: '#f7f0e2'
+  ivory-line: '#e2d3b4'
+  cta-ink: '#f3ead9'
   canvas: '#f4f8fd'
   card: '#ffffff'
   ink: '#0d1a3a'
@@ -30,8 +32,8 @@ colors:
   mute-tint-dark: '#17284f'
   btn-blue-dark: '#7ab9f5'
   cloth-dark: '#12307a'
-  gold-tint-dark: '#3a2c0c'
-  gold-line-dark: '#7a5e1c'
+  ivory-tint-dark: '#2b2820'
+  ivory-line-dark: '#5e5440'
   ok-dark: '#5fd39c'
   warn-dark: '#f5c25a'
   bad-dark: '#ff8a80'
@@ -96,14 +98,22 @@ spacing:
   section: '120px'
   section-phone: '72px'
 components:
-  button-gold:
-    backgroundColor: '{colors.seat-gold}'
-    textColor: '{colors.gold-ink}'
+  button-primary:
+    backgroundColor: '{colors.indigo}'
+    textColor: '{colors.cta-ink}'
     rounded: '{rounded.button}'
     padding: '0 24px'
     height: '52px'
-  button-gold-hover:
-    backgroundColor: '#f7c35e'
+  button-primary-hover:
+    backgroundColor: '{colors.indigo-raised}'
+  button-primary-on-cloth:
+    backgroundColor: '{colors.ivory}'
+    textColor: '{colors.ivory-ink}'
+    rounded: '{rounded.button}'
+    padding: '0 24px'
+    height: '52px'
+  button-primary-on-cloth-hover:
+    backgroundColor: '{colors.ivory-hover}'
   button-indigo:
     backgroundColor: '{colors.indigo}'
     textColor: '{colors.on-cloth}'
@@ -147,12 +157,12 @@ components:
     rounded: '{rounded.seat}'
     size: '18px'
   seat-light-lit:
-    backgroundColor: '{colors.seat-gold}'
+    backgroundColor: '{colors.ivory}'
     rounded: '{rounded.seat}'
     size: '18px'
   pass-seat-tag:
-    backgroundColor: '{colors.seat-gold}'
-    textColor: '{colors.gold-ink}'
+    backgroundColor: '{colors.ivory}'
+    textColor: '{colors.ivory-ink}'
     rounded: '12px'
     padding: '10px 16px 8px'
 ---
@@ -163,7 +173,7 @@ components:
 
 **Creative North Star: "The Lit Seat on Adire Cloth"**
 
-Just Pray is set on Adire eleko, the Yoruba indigo resist cloth, redrawn from the Believers Tech Network logo's own dots and lines: rings, dot grids, logo strands, combs, arcs and a leaf, faded white on deep indigo and joined by dotted seams. Gold is light: a lit seat, the action that lights one, and the few cues that show where you are. The world refuses both the cream-and-brown church page and the generic blue SaaS hero; it is a cloth people sit on, not a funnel.
+Just Pray is set on Adire eleko, the Yoruba indigo resist cloth, redrawn from the Believers Tech Network logo's own dots and lines: rings, dot grids, logo strands, combs, arcs and a leaf, faded white on deep indigo and joined by dotted seams. Warm ivory is the light: a lit seat, the action that lights one, and the few cues that show where you are, like cream paper against indigo ink. The world refuses both the cream-and-brown church page and the generic blue SaaS hero; it is a cloth people sit on, not a funnel.
 
 Screens are minimal and calm. Each screen shows just enough information to act, with one primary action per region. Nothing is repeated, nothing is decorative for its own sake, and nothing is invented: no filler claims, made-up numbers or promises. Beauty comes from the cloth, the type, space and the real event photos. Indigo cloth bands alternate with a pale tinted canvas carrying white cards; the organiser pages are the same world, quieter.
 
@@ -172,7 +182,7 @@ Both light and dark modes are first-class. In dark mode the canvas sinks to near
 **Key Characteristics:**
 
 - Indigo cloth fields built from six BTN-derived motifs, generated, deterministic, always aria-hidden.
-- Gold is light, never decoration: lit seats, the Reserve action, Free, the one lit word of a page headline, and interaction cues (focus, current page, selection).
+- Ivory is light, never decoration: lit seats, the Reserve action on cloth, the one lit word of a page headline, and interaction cues on cloth (focus, current page). On light grounds the main action is indigo with ivory text, and ivory is never used for words there.
 - Young Serif headlines at large scale against Figtree text; hierarchy by size, never by weight.
 - White cards on a tinted canvas, lifted by one soft blue shadow; stitched dashed borders on frames and tags.
 - The BTN logo only top left and in the footer, on cloth, never on a card.
@@ -180,7 +190,7 @@ Both light and dark modes are first-class. In dark mode the canvas sinks to near
 
 ## Colors
 
-BTN blue and white lead; indigo is the cloth; one warm accent, gold, is rationed to the meaning of light.
+BTN blue and white lead; indigo is the cloth; one warm accent, ivory, is rationed to the meaning of light. (Earlier versions used a marigold gold; it was replaced because it read loud on the indigo and weak on white.)
 
 ### Primary
 
@@ -189,7 +199,7 @@ BTN blue and white lead; indigo is the cloth; one warm accent, gold, is rationed
 
 ### Secondary
 
-- **Seat Gold** (seat-gold) with **Gold Ink** (gold-ink) text on it: a lit seat, the Reserve action (and the one primary action on an indigo screen region), and the Free tag or "free" word. Its tint (gold-tint, gold-line) frames a notice or the transfer reference.
+- **Ivory** (ivory) with **Ivory Ink** (ivory-ink, indigo) text on it: a lit seat, the pass seat tag, and the primary action on an indigo region. On canvas and cards the primary action is **Indigo** with **CTA Ink** (cta-ink) text, flipping to ivory with indigo text in dark mode. Its tint (ivory-tint, ivory-line) frames a notice or the transfer reference.
 
 ### Neutral
 
@@ -202,9 +212,9 @@ BTN blue and white lead; indigo is the cloth; one warm accent, gold, is rationed
 
 ### Named Rules
 
-**The Lit Seat Rule.** Gold is light. It marks a lit seat, the action that lights one (Reserve), and Free; the one lit word in a page headline ("pray.", the visitor's name on the pass); and cues that show where you are or what has focus: the focus ring, text selection, the current page and active tab, a selected amount in dark mode, the seat progress bar and the busiest day in the reservations chart. It never fills a decorative heading, an icon tile, a label or a background. Test: if the gold element is not light (a seat, the Reserve action, Free, the lit word, or a "you are here / this is selected" cue), it should not be gold.
+**The Lit Seat Rule.** Ivory is light. It marks a lit seat, the action that lights one (Reserve), and Free; the one lit word in a page headline ("pray.", the visitor's name on the pass); and cues that show where you are or what has focus: the focus ring, text selection, the current page and active tab, a selected amount in dark mode, and the seat tag on the pass. On light grounds those cues use BTN blue or indigo instead (chart bars, the share-picture ring). It never fills a decorative heading, an icon tile, a label or a background. Test: if the ivory element is not light (a seat, the Reserve action, the lit word, or a "you are here" cue on cloth), it should not be ivory.
 
-**The One Light Rule.** One gold action per screen region. A region on indigo may carry a single gold Reserve button; secondary actions there are underlined links.
+**The One Light Rule.** One primary action per screen region. A region on indigo may carry a single ivory Reserve button; secondary actions there are underlined links.
 
 **The Cloth Is Indigo Rule.** Motifs are white at low strength (0.06 to 0.22 opacity) on indigo. Never colour a motif, never put cloth on white.
 
@@ -224,7 +234,7 @@ BTN blue and white lead; indigo is the cloth; one warm accent, gold, is rationed
 - **Lead** (Young Serif 400, clamp(23px, 2.2vw, 30px), 1.3, max 24ch): one framing sentence under a head.
 - **Body** (Figtree 400, 17px, 1.6; 16px on phones): running text, 42 to 58ch.
 - **Label** (Figtree 600, 12 to 13px, 0.06 to 0.12em, uppercase): form field labels, key-value terms, table heads and pass field names. Functional labels only, always attached to a value or input.
-- **Numeral** (Young Serif, tabular figures): seat counts, the big date (clamp(120px, 15vw, 200px), 0.78, -0.04em; indigo in light mode, white in dark mode, never gold), pass seat number and codes.
+- **Numeral** (Young Serif, tabular figures): seat counts, the big date (clamp(120px, 15vw, 200px), 0.78, -0.04em; indigo in light mode, white in dark mode, never ivory), pass seat number and codes.
 
 ### Named Rules
 
@@ -248,7 +258,7 @@ Depth is quiet and tonal: cloth bands sit behind, white cards float on the canva
 
 - **Card lift** (`0 1px 2px rgb(14 39 102 / 6%), 0 24px 48px -24px rgb(14 39 102 / 28%)`; dark: `0 1px 2px rgb(0 0 0 / 30%), 0 24px 48px -24px rgb(0 0 0 / 60%)`): panels, the slip, account cards, organiser tiles, seat cloth, photo frames on canvas.
 - **Tag float** (`0 18px 36px -18px rgb(0 0 0 / 55%)`): white tags over a photo.
-- **Gold glow** (`0 10px 24px -12px rgb(245 184 65 / 80%)` on the gold button; `0 0 12px rgb(245 184 65 / 45%)` on a lit seat): only on gold, as the light it is.
+- **Ivory glow** (`0 0 12px rgb(239 228 207 / 45%)` on a lit seat): only on a lit seat, as the light it is. Primary buttons carry a soft dark drop shadow, not a glow.
 - **Pass drop** (`drop-shadow(0 34px 40px rgb(0 0 0 / 45%))`): the pass, so the torn edge casts its own shadow.
 
 ### Named Rules
@@ -268,7 +278,7 @@ Soft, generous corners: inputs 12px, buttons and tags 14px, organiser tiles 18px
 Confident, pill-adjacent, tactile.
 
 - **Shape:** 14px radius, 52px tall, Figtree 600 17px; small variant 44px tall, 11px radius, 15px.
-- **Gold:** the Reserve action only, with the gold glow. Hover lightens to #f7c35e.
+- **Primary:** the Reserve action. Indigo with ivory text on light grounds (hover indigo-raised); ivory with indigo text on the cloth (hover ivory-hover); ivory in dark mode.
 - **Indigo:** the primary action on a white panel that is not Reserve (Show bank details, I’ve sent it). In dark mode it inverts to white with indigo text.
 - **Ghost:** a 1.5px inset field-line stroke; hover turns the stroke BTN blue. Secondary organiser and reset actions.
 - **Press:** scale(0.97) over 150ms on the shared ease.
@@ -289,7 +299,7 @@ Confident, pill-adjacent, tactile.
 
 ### Navigation
 
-The top bar sits on the cloth of the first section, 92px tall (76px on phones): BTN logo, a hairline divider, "Just Pray" in Young Serif, links in cloth mist turning white, the current page underlined, and one small gold Reserve button. Phones get a Menu button opening a white card list. The footer is a cloth band with the logo, "Just Pray", and text links including the light/dark switch.
+The top bar sits on the cloth of the first section, 92px tall (76px on phones): BTN logo, a hairline divider, "Just Pray" in Young Serif, links in cloth mist turning white, the current page underlined, and one small ivory Reserve button. Phones get a pill Menu button (icon and word, icon only under 370px) opening a white card list that ends in a full-width Reserve button. The footer is a cloth band with the logo, "Just Pray", and text links including the light/dark switch.
 
 ### Adire Cloth (signature)
 
@@ -297,11 +307,11 @@ Generated SVG: a grid of 120px squares, each one of six motifs (rings, dots, str
 
 ### Seat Cloth (signature)
 
-One 18px ring per seat (14px on phones) in a 12-column grid on indigo. Reserved seats light gold in seat order, 14ms apart, once on load; the visitor's own seat carries a gold outline ring. Beside it: "N seats left" in Young Serif and the gold Reserve button.
+One 18px ring per seat (14px on phones) in a 12-column grid on indigo. Reserved seats light ivory in seat order, 14ms apart, once on load; the visitor's own seat carries an ivory outline ring. Beside it: "N seats left" in Young Serif and the ivory Reserve button.
 
 ### The Pass (signature)
 
-A white ticket on the cloth: an indigo cloth panel with "Admit one" and the gold seat-number tag, the name in Young Serif, a dotted perforation with half-circle notches, a label-value grid (code in Young Serif indigo), and the torn bottom edge. On arrival the pass rises in, the cloth squares draw in one by one, and the seat tag drops, once.
+A white ticket on the cloth: an indigo cloth panel with "Admit one" and the ivory seat-number tag, the name in Young Serif, a dotted perforation with half-circle notches, a label-value grid (code in Young Serif indigo), and the torn bottom edge. On arrival the pass rises in, the cloth squares draw in one by one, and the seat tag drops, once.
 
 ### Photo Frame and Tag
 
@@ -315,7 +325,7 @@ The BTN two-line lockup for indigo (btn-logo-ondark.png) appears in exactly two 
 
 ### Do:
 
-- **Do** keep gold to light: lit seats, the Reserve action, Free, one lit headline word, and focus/current/selected cues. Use indigo or ghost buttons for every other action.
+- **Do** keep ivory to light: lit seats, the Reserve action on cloth, one lit headline word, and focus/current cues on cloth. Use ghost buttons or links for every other action.
 - **Do** keep each screen to just enough information to act, with one primary action per region.
 - **Do** build every cloth field from the generated Adire motifs at 0.06 to 0.22 strength on indigo.
 - **Do** ship both modes: every surface reads in light and dark, with the dark tokens above.
@@ -325,7 +335,7 @@ The BTN two-line lockup for indigo (btn-logo-ondark.png) appears in exactly two 
 
 ### Don't:
 
-- **Don't** use gold to decorate: whole headings, icon tiles, labels, backgrounds, or a second gold button in the same region.
+- **Don't** use ivory to decorate (whole headings, icon tiles, labels, backgrounds), put ivory words on a light ground, or add a second primary button to a region.
 - **Don't** place the BTN logo anywhere except top left and the footer, and never on a card, panel or white box.
 - **Don't** use the torn edge on anything but the pass.
 - **Don't** repeat information already on the screen, add decorative sections, or write filler copy, invented figures, testimonials or promises.

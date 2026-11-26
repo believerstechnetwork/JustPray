@@ -55,6 +55,9 @@ export function seatWall(): string {
 
 const logo = (): string => `<img class="logo" src="${IMG.logo}" alt="Believers Tech Network">`;
 
+const MENU_OPEN = svg('<path d="M4 7h16M4 12h16M4 17h10"/>');
+const MENU_CLOSE = svg('<path d="M6 6l12 12M18 6L6 18"/>');
+
 /** The top bar. It sits on the cloth of the section that follows it. */
 export function nav(): string {
   const cur = (p: Route): string => (S.page === p ? 'aria-current="page"' : '');
@@ -65,9 +68,9 @@ export function nav(): string {
   return `${loadBanner()}<header class="nav">
   <button class="brand" data-route="home" type="button" aria-label="Just Pray, home">${logo()}<span class="sep"></span><span class="wm">Just Pray</span></button>
   <nav class="nav-links" aria-label="Main"><button data-route="home" ${cur('home')} type="button">About</button><button data-route="register" ${cur('register')} type="button">Next gathering</button>${events}<button data-route="support" ${cur('support')} type="button">Support</button></nav>
-  <button class="btn gold small" data-route="register" type="button">Reserve a seat</button>
-  <button class="menu-btn" data-action="menu" type="button" aria-expanded="${S.menu}" aria-controls="mnav">${S.menu ? 'Close' : 'Menu'}</button>
-  <nav id="mnav" class="mobile-nav ${S.menu ? 'open' : ''}" aria-label="Mobile"><button data-route="home" type="button">About</button><button data-route="register" type="button">Reserve a seat</button>${events}<button data-route="support" type="button">Support</button><button data-action="share" type="button">Share</button></nav></header>`;
+  <button class="btn primary small" data-route="register" type="button">Reserve a seat</button>
+  <button class="menu-btn" data-action="menu" type="button" aria-expanded="${S.menu}" aria-controls="mnav">${S.menu ? MENU_CLOSE : MENU_OPEN}<span>${S.menu ? 'Close' : 'Menu'}</span></button>
+  <nav id="mnav" class="mobile-nav ${S.menu ? 'open' : ''}" aria-label="Mobile"><button data-route="home" type="button">About</button>${events}<button data-route="support" type="button">Support</button><button data-action="share" type="button">Share</button><button class="btn primary" data-route="register" type="button">Reserve a seat ${ICON.arrow}</button></nav></header>`;
 }
 
 export const footer = (): string =>

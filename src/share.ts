@@ -48,7 +48,7 @@ function makeCard(i: number): Promise<{ blob: Blob | null; dataUrl: string }> {
     const im = new Image();
     im.onload = () => {
       if (!x) return resolve({ blob: null, dataUrl: '' });
-      const gold = '#f5b841';
+      const ivory = '#efe4cf';
       const ink = '#0e2766';
       x.fillStyle = ink;
       x.fillRect(0, 0, W, H);
@@ -67,7 +67,7 @@ function makeCard(i: number): Promise<{ blob: Blob | null; dataUrl: string }> {
       gr.addColorStop(1, '#0e276600');
       x.fillStyle = gr;
       x.fillRect(0, 0, W, H);
-      x.fillStyle = gold;
+      x.fillStyle = ivory;
       x.font = "400 104px 'Young Serif',Georgia,serif";
       x.fillText('Just Pray', 60, 160);
       x.fillStyle = '#fff';
@@ -84,7 +84,7 @@ function makeCard(i: number): Promise<{ blob: Blob | null; dataUrl: string }> {
         'Pray. Scripture, then personal and group prayer.',
         'Keep going. A prayer rhythm between gatherings.',
       ].forEach((t, k) => x.fillText(t, 60, 420 + k * 40));
-      x.fillStyle = gold;
+      x.fillStyle = ivory;
       x.beginPath();
       x.arc(68, H - 76, 8, 0, Math.PI * 2);
       x.fill();

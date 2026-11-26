@@ -33,7 +33,7 @@ export function register(): string {
   <label class="check"><input type="checkbox" id="privacy" name="privacy" required><span>My details may be used to manage this gathering. *</span></label>${fieldError('privacy')}
   <label class="check"><input type="checkbox" id="updates" name="updates"><span>Tell me about future Just Pray gatherings.</span></label>
   <div class="hp" aria-hidden="true"><label for="hp-w">Website</label><input id="hp-w" name="website" tabindex="-1" autocomplete="off"></div>
-  <button class="btn gold wide" type="submit" style="margin-top:24px"${S.busy ? ' disabled' : ''}>${S.busy ? 'Reserving…' : `Reserve my seat ${ICON.arrow}`}</button>
+  <button class="btn primary wide" type="submit" style="margin-top:24px"${S.busy ? ' disabled' : ''}>${S.busy ? 'Reserving…' : `Reserve my seat ${ICON.arrow}`}</button>
   <p class="fine">We use your details only to run Just Pray gatherings and never share or sell them. Email us to have them deleted.</p></form>`;
   return `<section class="cloth fade head">${pattern(14, 4, 3, 0.08)}${nav()}<div class="head-body"><div><h1>Reserve your seat.</h1><p class="lede">Free, with no ticket to buy. We’ll send the details by email and WhatsApp.</p></div>
  <div class="frame"><img src="${IMG.head1}" alt="" style="object-position:50% 24%"></div></div></section>

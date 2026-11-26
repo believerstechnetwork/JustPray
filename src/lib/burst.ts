@@ -1,12 +1,13 @@
-/* A short burst of gold and blue bubbles: the site's "light" scattering out from a moment worth
+/* A short burst of ivory and blue bubbles: the site's "light" scattering out from a moment worth
    celebrating (a seat reserved, an event published, a click to register). It plays once, lasts
    about a second and a half, ignores the pointer, and is skipped for anyone who prefers reduced
    motion. Only transform and opacity animate, so it stays smooth on phones. */
 
-/** Colours per background: on the indigo cloth, gold and white light; on light pages, gold and blue. */
+/** Colours per background: on the indigo cloth, ivory, white and sky blue; on light pages, indigo,
+ *  BTN blue and a warm sand that shows on white. */
 const PALETTES = {
-  cloth: ['#F5B841', '#FFD27A', '#FFFFFF', '#7AB9F5', '#F5B841'],
-  light: ['#F5B841', '#E09B12', '#0A6FC2', '#16378C', '#F7C35E'],
+  cloth: ['#EFE4CF', '#FFFFFF', '#A9C8FF', '#F8F1E3', '#7AB9F5'],
+  light: ['#0E2766', '#0A6FC2', '#C9AE7E', '#16378C', '#7AB9F5'],
 };
 
 export interface BurstOptions {
@@ -44,7 +45,7 @@ export function burst(from: Element | { x: number; y: number }, options: BurstOp
     const dot = document.createElement('i');
     const size = 7 + Math.random() * 13;
     const ring = Math.random() < 0.3;
-    const colour = colours[i % colours.length] ?? '#F5B841';
+    const colour = colours[i % colours.length] ?? '#EFE4CF';
     dot.style.cssText = `left:${x}px;top:${y}px;width:${size}px;height:${size}px;margin:${-size / 2}px 0 0 ${-size / 2}px;${ring ? `border:2.5px solid ${colour}` : `background:${colour};box-shadow:0 0 ${size}px ${colour}66`}`;
     layer.appendChild(dot);
 

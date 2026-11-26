@@ -39,7 +39,7 @@ export function confirmed(): string {
     : '';
   return `<section class="cloth fade done">${pattern(14, 8, 6, 0.08)}${nav()}<div class="done-body">
  <div><h1>You’re in${a ? `, <em>${first}.</em>` : '.'}</h1><p class="lede">Your seat is held for ${date}.${emailed} We’ll send any updates by email and WhatsApp before the day.</p>
-  <div class="actions">${btn('Back to home', 'home', 'gold')}<button class="link" data-route="support" type="button">Support the gathering</button></div>${cancel}</div>
+  <div class="actions">${btn('Back to home', 'home', 'primary')}<button class="link" data-route="support" type="button">Support the gathering</button></div>${cancel}</div>
  ${passCard({
    seat: a?.seat,
    name: a?.name ?? 'Guest',

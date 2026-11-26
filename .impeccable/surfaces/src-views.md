@@ -9,8 +9,8 @@ related_targets: ["src/styles.css"]
 
 Scope: every screen (Home, Reserve, You're in / pass, Support, organiser sign-in, Overview, Attendees, Contributions, Event). Visitor mode: Persuade (public pages), Operate (organiser pages, same world, quieter).
 Audience: Christian tech workers, Lagos first and open to anywhere; mostly on phones. Job: reserve a free seat in seconds; optionally give by bank transfer.
-Constraints: BTN blue and white lead, one accent (gold); keep existing photos; torn edge on the pass only, with motion that plays once; light and dark.
-Memorable moment: seats light up in gold, one by one, on Adire cloth; your seat lights when you reserve.
+Constraints: BTN blue and white lead, one accent (warm ivory, which replaced the original gold); keep existing photos; torn edge on the pass only, with motion that plays once; light and dark.
+Memorable moment: seats light up in ivory, one by one, on Adire cloth; your seat lights when you reserve.
 Density rule (user, binding): minimal and calm; one primary action per screen region, no repeated information, no decorative sections, no filler copy or invented claims. Logo only top left and in the footer, never on a card.
 Open: final dark-mode photo grade; whether the home reply slip ships in the first build.
 
