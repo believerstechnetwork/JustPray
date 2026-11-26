@@ -751,6 +751,28 @@ describe('review fixes', () => {
     expect(mailer.sent).toHaveLength(2);
   });
 
+  it('lists an event already under way as starting today, newest first on the same day', async () => {
+    const base = {
+      ...ANN,
+      time: null,
+      theme: null,
+      imageUrl: null,
+      linkUrl: null,
+      linkLabel: null,
+    };
+    const make = async (date: string, endDate: string | null) => {
+      const a = await db.createAnnouncement({ ...base, date, endDate });
+      db.contacts.push({ name: 'A', email: `p${a.id}@x.co`, source: 'S' });
+      await db.publishAnnouncement(a.id, 'imported');
+      return a.id;
+    };
+    const running = await make('2027-01-01', '2027-01-10');
+    const later = await make('2027-01-08', null);
+    const today = await make('2027-01-05', null);
+    const ids = (await db.upcomingAnnouncements('2027-01-05', 3)).map((a) => a.id);
+    expect(ids).toEqual([today, running, later]);
+  });
+
   it('publishes once when two publishes run at the same time', async () => {
     const id = (
       await db.createAnnouncement({

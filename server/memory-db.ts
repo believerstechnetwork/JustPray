@@ -16,6 +16,7 @@ import type {
   ReserveOutcome,
   UpdateEventOutcome,
 } from './types';
+import { orderUpcoming } from './upcoming';
 
 /** In-memory storage with the same rules as `supabase/schema.sql`.
  *  Used by unit tests, local development and the end-to-end tests. */
@@ -367,11 +368,13 @@ export class MemoryDb implements Db {
   }
 
   async upcomingAnnouncements(todayIso: string, limit: number): Promise<AnnouncementRecord[]> {
-    return this.announcements
-      .filter((a) => a.status === 'published' && (a.endDate ?? a.date) >= todayIso)
-      .sort((a, b) => a.date.localeCompare(b.date) || b.id - a.id)
-      .slice(0, limit)
-      .map((a) => ({ ...a }));
+    return orderUpcoming(
+      this.announcements.filter(
+        (a) => a.status === 'published' && (a.endDate ?? a.date) >= todayIso,
+      ),
+      todayIso,
+      limit,
+    ).map((a) => ({ ...a }));
   }
 
   async updatesAudience(scope: AudienceScope = 'all'): Promise<AudienceMember[]> {

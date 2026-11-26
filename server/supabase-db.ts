@@ -18,6 +18,7 @@ import type {
   ReserveOutcome,
   UpdateEventOutcome,
 } from './types';
+import { orderUpcoming } from './upcoming';
 
 /** Postgres unique-violation error code. */
 const UNIQUE_VIOLATION = '23505';
@@ -495,10 +496,10 @@ export class SupabaseDb implements Db {
         .eq('status', 'published')
         .or(`end_date.gte.${todayIso},and(end_date.is.null,date.gte.${todayIso})`)
         .order('date', { ascending: true })
-        .order('id', { ascending: false })
-        .limit(limit),
+        // Few events are ever upcoming at once; read enough to order them here.
+        .limit(100),
     ) as Row[];
-    return rows.map(toAnnouncement);
+    return orderUpcoming(rows.map(toAnnouncement), todayIso, limit);
   }
 
   async updatesAudience(scope: AudienceScope = 'all'): Promise<AudienceMember[]> {
