@@ -22,7 +22,8 @@ function dateTag(): string {
     day: 'numeric',
     month: 'long',
   });
-  return `<div class="tag">${ICON.cal}<div><b>${short}</b><span>${esc(displayTime(e.time))} · ${esc(e.venue)}</span></div></div>`;
+  const detail = `${displayTime(e.time)} · ${e.venue}`;
+  return `<div class="tag">${ICON.cal}<div><b>${short}</b><span title="${esc(detail)}">${esc(detail)}</span></div></div>`;
 }
 
 /** The first step of reserving, right on the first screen. It carries the name and email to the

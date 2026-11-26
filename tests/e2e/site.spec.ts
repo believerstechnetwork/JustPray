@@ -302,6 +302,39 @@ test('organiser can edit the gathering and the public page reflects it', async (
   await expect(page.locator('.date-txt')).toContainText('Landmark Centre, Lagos');
 });
 
+test('a long venue keeps the hero date tag a small label on the photo', async ({ page }) => {
+  const venue =
+    'Chibo Ofodile Close, Avant-garde 4, off Admiralty Road, Lekki Phase I, Lagos, Nigeria';
+  // Only this page sees the long venue, so tests that edit the shared gathering are unaffected.
+  await page.route('**/api/public', async (route) => {
+    const res = await route.fetch();
+    const body = (await res.json()) as { event: { venue: string } | null };
+    if (body.event) body.event.venue = venue;
+    await route.fulfill({ response: res, json: body });
+  });
+  // The page is already open (beforeEach): load it again so it fetches through the route.
+  await page.goto('/#/home');
+  await page.reload();
+  const tag = page.locator('.hero-photo .tag');
+  await expect(tag).toContainText('Lekki');
+  const box = (await tag.boundingBox())!;
+  const frame = (await page.locator('.hero-photo .frame').boundingBox())!;
+  // Never wider than 360px, and it ends well inside the photo.
+  expect(box.width).toBeLessThanOrEqual(360);
+  expect(box.x + box.width).toBeLessThan(frame.x + frame.width);
+  // The address takes at most two lines; the full text is in the tooltip and further down.
+  const span = tag.locator('span');
+  const line = await span.evaluate((el) => parseFloat(getComputedStyle(el).lineHeight));
+  expect((await span.boundingBox())!.height).toBeLessThanOrEqual(line * 2 + 1);
+  await expect(span).toHaveAttribute('title', new RegExp(venue));
+  await expect(page.locator('.date-txt')).toContainText(venue);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    ),
+  ).toBeLessThanOrEqual(1);
+});
+
 test('dark mode toggle switches the theme and is remembered', async ({ page }) => {
   await page.getByRole('button', { name: 'Dark mode' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-mode', 'dark');
