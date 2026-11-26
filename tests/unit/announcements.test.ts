@@ -968,6 +968,38 @@ describe('review fixes', () => {
     expect(db.outbox).toHaveLength(1);
   });
 
+  it('leaves nothing queued when publishing fails part-way, so a retry queues each person once', async () => {
+    let broken = false;
+    const local = new MemoryDb(EVENT, () => {
+      if (broken) throw new Error('clock unavailable');
+      return new Date();
+    });
+    const id = (
+      await local.createAnnouncement({
+        ...ANN,
+        endDate: null,
+        time: null,
+        theme: null,
+        imageUrl: null,
+        linkUrl: null,
+        linkLabel: null,
+      })
+    ).id;
+    local.contacts.push(
+      { name: 'A', email: 'a@x.co', source: 'Sheet' },
+      { name: 'B', email: 'b@x.co', source: 'Sheet' },
+    );
+    broken = true;
+    await expect(local.publishAnnouncement(id, 'imported')).rejects.toThrow('clock unavailable');
+    broken = false;
+    // Still a draft, with nothing queued that could be sent.
+    expect((await local.announcementById(id))?.status).toBe('draft');
+    expect(local.outbox).toHaveLength(0);
+    // Publishing again works, and queues each person exactly once.
+    expect((await local.publishAnnouncement(id, 'imported'))?.recipients).toBe(2);
+    expect(local.outbox.map((o) => o.email).sort()).toEqual(['a@x.co', 'b@x.co']);
+  });
+
   it('still serves the gathering when the announcements query fails', async () => {
     db.upcomingAnnouncements = () => Promise.reject(new Error('no table yet'));
     const { status, data } = await call('GET', '/api/public', undefined, { cookie: '' });

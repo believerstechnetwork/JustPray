@@ -262,30 +262,35 @@ export class MemoryDb implements Db {
   async publishAnnouncement(id: number, scope: AudienceScope): Promise<AnnouncementRecord | null> {
     const a = this.announcements.find((x) => x.id === id);
     if (!a || a.status !== 'draft') return null;
-    // Everything is prepared and stored in one step with no await in between, like the
-    // database's single transaction: nothing reads a half-published announcement, and a second
-    // publish finds it already published and queues nothing.
+    // Like the database's single transaction: everything that can fail (the audience, the
+    // tokens, the clock) is worked out first, then stored in one step with no await in between.
+    // Nothing reads a half-published announcement, a failure leaves no emails queued for a
+    // draft, and a second publish finds it already published and queues nothing.
     const people = this.audienceNow(scope);
     const snapshot: AnnouncementRecord = { ...a, emailContent: null };
-    for (const p of people)
-      this.outbox.push({
-        id: this.nextId++,
-        announcementId: id,
-        name: p.name,
-        email: p.email,
-        unsubToken: randomBytes(24).toString('base64url'),
-        status: 'pending',
-        attempts: 0,
-        claimedAt: 0,
-        sentAt: null,
-        finishedAt: null,
-        error: null,
-        claimToken: null,
-      });
+    const publishedAt = this.now().toISOString();
+    const tokens = people.map(() => randomBytes(24).toString('base64url'));
+    const firstId = this.nextId;
+    const rows = people.map((p, i) => ({
+      id: firstId + i,
+      announcementId: id,
+      name: p.name,
+      email: p.email,
+      unsubToken: tokens[i] ?? '',
+      status: 'pending' as const,
+      attempts: 0,
+      claimedAt: 0,
+      sentAt: null,
+      finishedAt: null,
+      error: null,
+      claimToken: null,
+    }));
+    this.nextId += rows.length;
+    this.outbox.push(...rows);
     Object.assign(a, {
       status: 'published',
       emailContent: snapshot,
-      publishedAt: this.now().toISOString(),
+      publishedAt,
       recipients: people.length,
       audience: scope,
     });
