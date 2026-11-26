@@ -1,6 +1,7 @@
 import type {
   AdminData,
   BankDetails,
+  CancelInfo,
   Contribution,
   Currency,
   GatheringEvent,
@@ -53,6 +54,8 @@ export const api = {
     ),
   markSent: (reference: string) =>
     call<{ reference: string }>('POST', 'contributions/sent', { reference }),
+  cancelLookup: (token: string) => call<CancelInfo>('POST', 'cancel/lookup', { token }),
+  cancel: (token: string) => call<CancelInfo>('POST', 'cancel', { token }),
   login: (password: string) => call<{ ok: true }>('POST', 'admin/login', { password }),
   logout: () => call<{ ok: true }>('POST', 'admin/logout', {}),
   adminData: () => call<AdminData>('GET', 'admin/data'),

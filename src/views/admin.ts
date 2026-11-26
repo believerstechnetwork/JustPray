@@ -1,5 +1,5 @@
 import type { AdminData, Contribution, Currency } from '../data/types';
-import { esc, longDate, money } from '../lib/format';
+import { displayTime, esc, longDate, money, parseTime } from '../lib/format';
 import { pattern } from '../lib/cloth';
 import { ICON } from './common';
 import { S, type AdminTab } from '../state';
@@ -60,7 +60,7 @@ function overview(d: AdminData): string {
   ${
     d.event
       ? `<div class="block"><div class="block-h"><h2>${esc(d.event.title)}</h2><button class="btn small ghost" data-tab="events" type="button">Edit event</button></div>
-  <dl class="kv" style="margin-top:0"><div><dt>Date</dt><dd>${longDate(d.event.date)}</dd></div><div><dt>Time</dt><dd>${esc(d.event.time)}</dd></div><div><dt>Venue</dt><dd>${esc(d.event.venue)}</dd></div></dl></div>`
+  <dl class="kv" style="margin-top:0"><div><dt>Date</dt><dd>${longDate(d.event.date)}</dd></div><div><dt>Time</dt><dd>${esc(displayTime(d.event.time))}</dd></div><div><dt>Venue</dt><dd>${esc(d.event.venue)}</dd></div></dl></div>`
       : ''
   }
   <div class="block"><div class="block-h"><h2>Reservations by day</h2><small>Last 7 days, Lagos time</small></div>
@@ -68,15 +68,23 @@ function overview(d: AdminData): string {
   <div class="axis">${d.byDay.map((b) => `<span>${weekdayOf(b.date)}</span>`).join('')}</div></div>`;
 }
 
+const seatStatus = (r: AdminData['reservations'][number]): string =>
+  r.status === 'cancelled'
+    ? `<span class="status mute">Cancelled</span><br><small>${when(r.cancelledAt)}</small>`
+    : r.emailSent
+      ? '<span class="status ok">Email sent</span>'
+      : '<span class="status mute">Email not sent</span>';
+
 function attendees(d: AdminData): string {
+  const cancelled = d.reservations.filter((r) => r.status === 'cancelled').length;
   const rows = d.reservations
     .map(
       (r) =>
-        `<tr><td data-label="Name"><b>${esc(r.name)}</b><br><small>${esc(r.email)} · ${esc(r.phone)}</small></td><td class="code" data-label="Code">${esc(r.code)}</td><td data-label="Reserved">${when(r.createdAt)}</td><td data-label="Email">${r.emailSent ? '<span class="status ok">Sent</span>' : '<span class="status mute">Not sent</span>'}</td></tr>`,
+        `<tr${r.status === 'cancelled' ? ' class="gone"' : ''}><td data-label="Name"><b>${esc(r.name)}</b><br><small>${esc(r.email)} · ${esc(r.phone)}</small></td><td class="code" data-label="Code">${esc(r.code)}</td><td data-label="Reserved">${when(r.createdAt)}</td><td data-label="Status">${seatStatus(r)}</td></tr>`,
     )
     .join('');
-  return `<div class="block"><div class="block-h"><h2>${d.reserved} reservation${d.reserved === 1 ? '' : 's'}</h2><a class="btn small ghost" href="/api/admin/reservations.csv" download>Download CSV</a></div>
-  ${d.reservations.length ? `<div class="tw"><table class="cards"><thead><tr><th>Name</th><th>Code</th><th>Reserved</th><th>Email</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="empty"><h3>No reservations yet</h3><p>People who reserve a seat appear here, with their code and contact details.</p><button class="btn small ghost" data-action="share" type="button">Share the booking link</button></div>'}</div>`;
+  return `<div class="block"><div class="block-h"><h2>${d.reserved} reserved${cancelled ? `<small> · ${cancelled} cancelled</small>` : ''}</h2><a class="btn small ghost" href="/api/admin/reservations.csv" download>Download CSV</a></div>
+  ${d.reservations.length ? `<div class="tw"><table class="cards"><thead><tr><th>Name</th><th>Code</th><th>Reserved</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="empty"><h3>No reservations yet</h3><p>People who reserve a seat appear here, with their code and contact details.</p><button class="btn small ghost" data-action="share" type="button">Share the booking link</button></div>'}</div>`;
 }
 
 const statusTag = (c: Contribution): string =>
@@ -111,10 +119,10 @@ function events(d: AdminData): string {
   const e = d.event ?? { title: '', date: '', time: '', venue: '', capacity: 120 };
   return `<div class="block"><div class="block-h"><h2>Edit gathering</h2></div>
    <form data-form="event"><div class="field"><label for="ft">Title</label><input id="ft" required name="title" value="${esc(e.title)}"></div>
-   <div class="formgrid"><div class="field"><label for="fd">Date</label><input id="fd" type="date" required name="date" value="${esc(e.date)}"></div><div class="field"><label for="ftm">Time</label><input id="ftm" required name="time" value="${esc(e.time)}" placeholder="4:00 PM WAT"></div></div>
+   <div class="formgrid"><div class="field"><label for="fd">Date</label><input id="fd" type="date" required name="date" value="${esc(e.date)}"></div><div class="field"><label for="ftm">Start time (Lagos)</label><input id="ftm" type="time" required name="time" value="${esc(parseTime(e.time) ?? '')}"></div></div>
    <div class="formgrid"><div class="field"><label for="fv">Venue</label><input id="fv" required name="venue" value="${esc(e.venue)}"></div><div class="field"><label for="fc">Seats</label><input id="fc" type="number" min="${Math.max(1, d.reserved)}" step="1" required name="capacity" value="${e.capacity}"></div></div>
    ${S.adminError ? `<p class="err" role="alert">${esc(S.adminError)}</p>` : ''}
-   <button class="btn ind" type="submit" style="margin-top:22px"${S.busy ? ' disabled' : ''}>${S.busy ? 'Saving…' : 'Save changes'}</button>${S.adminNotice ? ` <span role="status" class="fine">${esc(S.adminNotice)}</span>` : ''}</form></div><p class="fine">Changes show on the public pages straight away. Confirmation emails use these details.</p>`;
+   <button class="btn ind" type="submit" style="margin-top:22px"${S.busy ? ' disabled' : ''}>${S.busy ? 'Saving…' : 'Save changes'}</button>${S.adminNotice ? ` <span role="status" class="fine">${esc(S.adminNotice)}</span>` : ''}</form></div><p class="fine">Changes show on the public pages straight away. Confirmation emails and calendar links use these details.</p>`;
 }
 
 function login(): string {

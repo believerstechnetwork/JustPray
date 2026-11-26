@@ -1,6 +1,6 @@
 import { IMG } from '../images';
 import { motif, pattern } from '../lib/cloth';
-import { dayOfMonth, esc, monthYear, weekday } from '../lib/format';
+import { dayOfMonth, displayTime, esc, monthYear, weekday } from '../lib/format';
 import { capacity, S, seatsLeft } from '../state';
 import { btn, footer, ICON, nav, seatWall, when } from './common';
 
@@ -9,7 +9,7 @@ function nextDate(): string {
   const e = S.event;
   if (!e)
     return `<div class="date-big"><div class="day">${S.load === 'loading' ? '…' : '–'}</div><div class="date-txt"><b>Next gathering</b><span>${S.load === 'loading' ? 'Loading details…' : 'Date to be announced'}</span></div></div>`;
-  return `<div class="date-big"><div class="day num">${dayOfMonth(e.date)}</div><div class="date-txt"><b>${weekday(e.date)},<br>${monthYear(e.date)}</b><span>${esc(e.time)} · ${esc(e.venue)}</span></div></div>`;
+  return `<div class="date-big"><div class="day num">${dayOfMonth(e.date)}</div><div class="date-txt"><b>${weekday(e.date)},<br>${monthYear(e.date)}</b><span>${esc(displayTime(e.time))} · ${esc(e.venue)}</span></div></div>`;
 }
 
 /** The date tag on the hero photo, once the gathering is announced. */
@@ -21,7 +21,7 @@ function dateTag(): string {
     day: 'numeric',
     month: 'long',
   });
-  return `<div class="tag">${ICON.cal}<div><b>${short}</b><span>${esc(e.time)} · ${esc(e.venue)}</span></div></div>`;
+  return `<div class="tag">${ICON.cal}<div><b>${short}</b><span>${esc(displayTime(e.time))} · ${esc(e.venue)}</span></div></div>`;
 }
 
 /** The first step of reserving, right on the first screen. It carries the name and email to the

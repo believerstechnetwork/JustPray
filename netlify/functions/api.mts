@@ -17,7 +17,8 @@ export default async (req: Request, context: Context): Promise<Response> =>
     mailer,
     banks,
     adminPassword: env.ADMIN_PASSWORD ?? '',
-    siteUrl: env.SITE_URL,
+    // Netlify sets URL to the site's main address, in deploy previews too.
+    siteUrl: env.SITE_URL || env.URL,
     // Send emails after responding, so a slow mail server never delays the visitor.
     defer: (work) => {
       if (typeof context.waitUntil === 'function') context.waitUntil(work);

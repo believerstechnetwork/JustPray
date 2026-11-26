@@ -48,7 +48,13 @@ describe('SupabaseDb', () => {
         ],
       },
     ]);
-    const out = await db.reserve({ name: 'Ada', email: 'a@b.co', phone: '+234', updates: true });
+    const out = await db.reserve({
+      name: 'Ada',
+      email: 'a@b.co',
+      phone: '+234',
+      updates: true,
+      cancelHash: 'h1',
+    });
     expect(out).toEqual({
       status: 'created',
       id: 7,
@@ -60,7 +66,13 @@ describe('SupabaseDb', () => {
     expect(seen[0]).toMatchObject({
       method: 'POST',
       path: '/rest/v1/rpc/reserve_seat',
-      body: { p_name: 'Ada', p_email: 'a@b.co', p_phone: '+234', p_updates: true },
+      body: {
+        p_name: 'Ada',
+        p_email: 'a@b.co',
+        p_phone: '+234',
+        p_updates: true,
+        p_cancel_hash: 'h1',
+      },
     });
     expect(seen[0]?.headers.get('apikey')).toBe('sb_secret_test');
   });
@@ -70,12 +82,14 @@ describe('SupabaseDb', () => {
       { body: [{ status: 'full', reserved: 120 }] },
       { body: [{ status: '??' }] },
     ]);
-    expect(await db.reserve({ name: 'A', email: 'a@b.co', phone: '1', updates: false })).toEqual({
+    expect(
+      await db.reserve({ name: 'A', email: 'a@b.co', phone: '1', updates: false, cancelHash: 'h' }),
+    ).toEqual({
       status: 'full',
       reserved: 120,
     });
     await expect(
-      db.reserve({ name: 'A', email: 'a@b.co', phone: '1', updates: false }),
+      db.reserve({ name: 'A', email: 'a@b.co', phone: '1', updates: false, cancelHash: 'h' }),
     ).rejects.toThrow(/unexpected reserve status/);
   });
 
@@ -240,6 +254,58 @@ describe('SupabaseDb', () => {
     });
     const { db } = fakeSupabase([{ body: [row(1), row(2)] }, { body: [row(3)] }, { body: [] }]);
     expect((await db.listContributions()).map((c) => c.id)).toEqual([3, 2, 1]);
+  });
+
+  it('counts only held seats', async () => {
+    const { db, seen } = fakeSupabase([{ body: [{ id: 4, is_current: true }] }, { body: [] }]);
+    await db.reservedCount();
+    expect(seen[1]?.query).toContain('event_id=eq.4');
+    expect(seen[1]?.query).toContain('status=eq.active');
+  });
+
+  it('finds a reservation by its cancel hash without reading the hash back', async () => {
+    const reservation = {
+      id: 9,
+      event_id: 4,
+      seat: 2,
+      code: 'JP-0002',
+      name: 'Ada',
+      email: 'a@b.co',
+      phone: '+234',
+      updates: false,
+      email_sent_at: null,
+      created_at: '2027-01-01T00:00:00Z',
+      status: 'active',
+      cancelled_at: null,
+    };
+    const event = {
+      id: 4,
+      title: 'T',
+      date: '2027-01-30',
+      time: '16:00',
+      venue: 'V',
+      capacity: 9,
+      is_current: false,
+    };
+    const { db, seen } = fakeSupabase([{ body: [reservation] }, { body: [event] }]);
+    const found = await db.findByCancelHash('abc');
+    expect(found).toMatchObject({
+      reservation: { id: 9, seat: 2, status: 'active', cancelledAt: null },
+      event: { title: 'T', time: '16:00' },
+      current: false,
+    });
+    expect(seen[0]?.query).toContain('cancel_hash=eq.abc');
+    expect(seen[0]?.query).not.toMatch(/select=[^&]*cancel_hash/);
+    expect(seen[1]?.query).toContain('id=eq.4');
+  });
+
+  it('cancels only an active reservation, once', async () => {
+    const { db, seen } = fakeSupabase([{ body: [{ id: 9 }] }, { body: [] }]);
+    expect(await db.cancelReservation(9)).toBe(true);
+    expect(await db.cancelReservation(9)).toBe(false);
+    expect(seen[0]).toMatchObject({ method: 'PATCH', path: '/rest/v1/reservations' });
+    expect(seen[0]?.query).toContain('status=eq.active');
+    expect(seen[0]?.body).toMatchObject({ status: 'cancelled' });
   });
 
   it('maps contribution rows', async () => {

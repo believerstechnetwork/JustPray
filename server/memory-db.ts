@@ -1,4 +1,5 @@
 import type {
+  CancelLookup,
   ContributionRecord,
   ContributionStatus,
   Db,
@@ -12,9 +13,14 @@ import type {
 
 /** In-memory storage with the same rules as `supabase/schema.sql`.
  *  Used by unit tests, local development and the end-to-end tests. */
+type StoredReservation = ReservationRecord & { cancelHash: string | null };
+
+/** A copy without the stored cancel hash, which never leaves the database. */
+const plain = ({ cancelHash: _hash, ...r }: StoredReservation): ReservationRecord => ({ ...r });
+
 export class MemoryDb implements Db {
   event: EventDetails | null;
-  reservations: ReservationRecord[] = [];
+  reservations: StoredReservation[] = [];
   contributions: ContributionRecord[] = [];
   private nextId = 1;
   private readonly now: () => Date;
@@ -28,26 +34,45 @@ export class MemoryDb implements Db {
     return this.event ? { ...this.event } : null;
   }
 
+  private active(): ReservationRecord[] {
+    return this.reservations.filter((r) => r.status === 'active');
+  }
+
   async updateEvent(event: EventDetails): Promise<UpdateEventOutcome> {
-    if (event.capacity < this.reservations.length)
-      return { ok: false, reserved: this.reservations.length };
+    const taken = this.active().length;
+    if (event.capacity < taken) return { ok: false, reserved: taken };
     this.event = { ...event };
     return { ok: true, event: { ...event } };
   }
 
   async reservedCount(): Promise<number> {
-    return this.reservations.length;
+    return this.active().length;
   }
 
   async reserve(input: NewReservation): Promise<ReserveOutcome> {
-    const taken = this.reservations.length;
+    const taken = this.active().length;
     if (!this.event) return { status: 'no_event', reserved: 0 };
     const email = input.email.trim().toLowerCase();
     const existing = this.reservations.find((r) => r.email === email);
-    if (existing) return { status: 'existing', ...pick(existing), reserved: taken };
+    if (existing?.status === 'active')
+      return { status: 'existing', ...pick(existing), reserved: taken };
     if (taken >= this.event.capacity) return { status: 'full', reserved: taken };
+    if (existing) {
+      // Cancelled earlier: the same row, and so the same seat, is theirs again.
+      Object.assign(existing, {
+        name: input.name.trim(),
+        phone: input.phone.trim(),
+        updates: input.updates,
+        cancelHash: input.cancelHash,
+        status: 'active',
+        cancelledAt: null,
+        emailSentAt: null,
+        createdAt: this.now().toISOString(),
+      });
+      return { status: 'created', ...pick(existing), reserved: taken + 1 };
+    }
     const seat = Math.max(0, ...this.reservations.map((r) => r.seat)) + 1;
-    const r: ReservationRecord = {
+    const r: StoredReservation = {
       id: this.nextId++,
       seat,
       code: `JP-${String(seat).padStart(4, '0')}`,
@@ -57,6 +82,9 @@ export class MemoryDb implements Db {
       updates: input.updates,
       emailSentAt: null,
       createdAt: this.now().toISOString(),
+      status: 'active',
+      cancelledAt: null,
+      cancelHash: input.cancelHash,
     };
     this.reservations.push(r);
     return { status: 'created', ...pick(r), reserved: taken + 1 };
@@ -67,8 +95,27 @@ export class MemoryDb implements Db {
     if (r) r.emailSentAt = this.now().toISOString();
   }
 
+  async setCancelHash(reservationId: number, cancelHash: string): Promise<void> {
+    const r = this.reservations.find((x) => x.id === reservationId);
+    if (r) r.cancelHash = cancelHash;
+  }
+
+  async findByCancelHash(cancelHash: string): Promise<CancelLookup | null> {
+    const r = this.reservations.find((x) => x.cancelHash === cancelHash);
+    if (!r || !this.event) return null;
+    return { reservation: plain(r), event: { ...this.event }, current: true };
+  }
+
+  async cancelReservation(reservationId: number): Promise<boolean> {
+    const r = this.reservations.find((x) => x.id === reservationId);
+    if (!r || r.status !== 'active') return false;
+    r.status = 'cancelled';
+    r.cancelledAt = this.now().toISOString();
+    return true;
+  }
+
   async listReservations(): Promise<ReservationRecord[]> {
-    return this.reservations.map((r) => ({ ...r }));
+    return this.reservations.map(plain);
   }
 
   async createContribution(input: NewContribution): Promise<ContributionRecord | null> {

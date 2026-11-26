@@ -1,6 +1,6 @@
 import { IMG } from '../images';
 import { pattern } from '../lib/cloth';
-import { esc, longDate } from '../lib/format';
+import { displayTime, esc, longDate } from '../lib/format';
 import { PHONE_PATTERN } from '../lib/validation';
 import { capacity, ready, S, seatsLeft } from '../state';
 import { footer, ICON, nav, when } from './common';
@@ -38,7 +38,7 @@ export function register(): string {
   return `<section class="cloth fade head">${pattern(14, 4, 3, 0.08)}${nav()}<div class="head-body"><div><h1>Reserve your seat.</h1><p class="lede">Free, with no ticket to buy. We’ll send the details by email and WhatsApp.</p></div>
  <div class="frame"><img src="${IMG.head1}" alt="" style="object-position:50% 24%"></div></div></section>
 <div class="wrap"><section class="split"><div class="intro"><h2>Next gathering</h2>
-  <dl class="kv"><div><dt>Date</dt><dd>${when(() => (e ? longDate(e.date) : 'To be announced'))}</dd></div><div><dt>Time</dt><dd>${when(() => esc(e?.time ?? ''))}</dd></div><div><dt>Venue</dt><dd>${when(() => esc(e?.venue ?? ''))}</dd></div><div><dt>Seats left</dt><dd>${when(() => `${seatsLeft()} of ${capacity()}`)}</dd></div></dl>
+  <dl class="kv"><div><dt>Date</dt><dd>${when(() => (e ? longDate(e.date) : 'To be announced'))}</dd></div><div><dt>Time</dt><dd>${when(() => esc(displayTime(e?.time ?? '')))}</dd></div><div><dt>Venue</dt><dd>${when(() => esc(e?.venue ?? ''))}</dd></div><div><dt>Seats left</dt><dd>${when(() => `${seatsLeft()} of ${capacity()}`)}</dd></div></dl>
   <p>After you reserve, you’ll see your pass with your seat number and code.</p></div>
 ${panel}</section></div><div class="page-end"></div>${footer()}`;
 }

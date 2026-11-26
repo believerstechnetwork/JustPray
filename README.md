@@ -9,13 +9,15 @@ TypeScript) and a Supabase Postgres database. Confirmation emails go out through
 ## Going live (one-time setup)
 
 1. **Database.** In Supabase, open SQL Editor, paste `supabase/schema.sql` and run it. It is safe to
-   run again; it only creates what is missing.
+   run again; it only creates what is missing. When an update changes `schema.sql`, run it again
+   before merging that update: the changes are written so the live site keeps working meanwhile.
 2. **Settings.** In Netlify, open Site configuration, then Environment variables, and add the
    variables listed in `.env.example`. Mark the keys and passwords as secret.
 3. **Deploy.** Push to `main`. The site, the API (`/api/*`) and a daily keep-alive job (so Supabase's
    free plan does not pause the database) deploy together.
 4. **Create the gathering.** Open `/#/admin`, sign in with `ADMIN_PASSWORD`, and save the Event
-   editor with the title, date, time, venue and seats. Reservations stay closed until this is saved.
+   editor with the title, date, start time (Lagos), venue and seats. Reservations stay closed until
+   this is saved.
 
 Until a setting is present, the matching feature says so instead of failing: no database means
 "not connected yet", no bank details hide the transfer form, and no email settings mean bookings
@@ -25,7 +27,13 @@ still work but no email is sent (the organiser view shows a warning).
 
 - **Reserve a seat:** the server checks the details, then a database function hands out the next
   seat number. It locks the gathering row while doing so, so the capacity can never be exceeded. The
-  confirmation email is sent after the response, so a slow mail server never delays the visitor.
+  confirmation email is sent after the response, so a slow mail server never delays the visitor. It
+  has the pass details, Add to calendar (Google, or an `.ics` file from `/api/event.ics`), directions,
+  and a private "Cancel my seat" link.
+- **Cancel a seat:** the link carries a random token unique to each booking; only its SHA-256 hash is
+  stored. Cancelling frees the seat at once, sends a short note, and keeps the person on the organiser
+  list as Cancelled. Booking again with the same email gives back the same seat while seats remain.
+  Cancelling closes an hour after the gathering starts.
 - **Support:** the giver picks naira or dollars, an amount, and enters their name and email. They get the
   account for that currency and a unique reference (for example `JP-7K3QX`) to put in the transfer
   description. "I've sent it" marks it as ready to check.
@@ -73,13 +81,14 @@ src/
   state.ts         UI state
   data/types.ts    shapes returned by the API
   lib/             pure helpers: formatting, validation (shared with the server), torn-paper edges
-  views/           one module per page
+  views/           one module per page (cancel.ts: the "Cancel my seat" page)
   share.ts         share dialog and share-image generation
   assets/images/   web-sized photos (2400px max edge)
 server/
   api.ts           every /api route, independent of Netlify so it is easy to test
   supabase-db.ts   storage on Supabase; memory-db.ts is the same rules in memory
   mailer.ts        Gmail (SMTP app password) or Resend
+  emails.ts        the email templates (confirmation, cancellation)
   auth.ts          signed organiser session cookie
 netlify/functions/
   api.mts          serves /api/*

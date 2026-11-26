@@ -4,6 +4,8 @@ export interface EventDetails {
   title: string;
   /** ISO date, YYYY-MM-DD */
   date: string;
+  /** Start time in Lagos, "HH:MM" (24-hour). Gatherings saved before the time picker may hold
+   *  free text such as "4:00 PM WAT"; `parseTime` reads both. */
   time: string;
   venue: string;
   capacity: number;
@@ -11,6 +13,8 @@ export interface EventDetails {
 
 export type UpdateEventOutcome =
   { ok: true; event: EventDetails } | { ok: false; reserved: number };
+
+export type ReservationStatus = 'active' | 'cancelled';
 
 export interface ReservationRecord {
   id: number;
@@ -22,6 +26,8 @@ export interface ReservationRecord {
   updates: boolean;
   emailSentAt: string | null;
   createdAt: string;
+  status: ReservationStatus;
+  cancelledAt: string | null;
 }
 
 export interface NewReservation {
@@ -29,6 +35,16 @@ export interface NewReservation {
   email: string;
   phone: string;
   updates: boolean;
+  /** SHA-256 of the private cancel token; the token itself is never stored. */
+  cancelHash: string;
+}
+
+/** A reservation found by its cancel token, with the gathering it belongs to. */
+export interface CancelLookup {
+  reservation: ReservationRecord;
+  event: EventDetails;
+  /** False when the organisers have since moved on to another gathering. */
+  current: boolean;
 }
 
 export interface SeatHeld {
@@ -81,9 +97,17 @@ export interface Db {
   currentEvent(): Promise<EventDetails | null>;
   /** Refuses (and changes nothing) when capacity is below the seats already reserved. */
   updateEvent(event: EventDetails): Promise<UpdateEventOutcome>;
+  /** Seats held now: cancelled reservations do not count. */
   reservedCount(): Promise<number>;
+  /** A cancelled reservation for the same email is brought back (status 'created'). */
   reserve(input: NewReservation): Promise<ReserveOutcome>;
   markEmailSent(reservationId: number): Promise<void>;
+  /** Replace the cancel token, e.g. when a confirmation email is sent again. */
+  setCancelHash(reservationId: number, cancelHash: string): Promise<void>;
+  findByCancelHash(cancelHash: string): Promise<CancelLookup | null>;
+  /** True when this call cancelled it; false when it was already cancelled or is unknown. */
+  cancelReservation(reservationId: number): Promise<boolean>;
+  /** Every reservation for the current gathering, cancelled ones included. */
   listReservations(): Promise<ReservationRecord[]>;
   /** Returns null when the reference is already taken. */
   createContribution(input: NewContribution): Promise<ContributionRecord | null>;

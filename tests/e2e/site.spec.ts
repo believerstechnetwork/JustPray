@@ -89,6 +89,45 @@ test('reserving a seat shows the pass and updates the seat count', async ({ page
   expect(await seatCount(page)).toBeGreaterThan(before);
 });
 
+test('a visitor can cancel their own seat from the pass', async ({ page }) => {
+  await page.goto('/#/register');
+  await fillRegistration(page);
+  await page.getByRole('button', { name: 'Reserve my seat' }).click();
+  await expect(page).toHaveURL(/#\/confirmed$/);
+  const code = (await page.getByText(/^JP-\d{4}$/).textContent()) ?? '';
+
+  await page.getByRole('link', { name: 'Cancel my seat' }).click();
+  await expect(page).toHaveURL(/#\/cancel\/[A-Za-z0-9_-]{32}$/);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Cancel your seat?');
+  await expect(page.getByText(code)).toBeVisible();
+  const link = page.url();
+
+  await page.getByRole('button', { name: 'Cancel my seat' }).click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Seat cancelled.');
+  await expect(page.locator('.pass.void')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Reserve again' })).toBeVisible();
+
+  // Opening the link again, as from the email, shows that it is already done.
+  await page.goto(link);
+  await page.reload();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Already cancelled.');
+});
+
+test('keeping the seat leaves it booked', async ({ page }) => {
+  await page.goto('/#/register');
+  await fillRegistration(page);
+  await page.getByRole('button', { name: 'Reserve my seat' }).click();
+  await page.getByRole('link', { name: 'Cancel my seat' }).click();
+  await page.getByRole('button', { name: 'Keep my seat' }).click();
+  await expect(page).toHaveURL(/#\/home$/);
+});
+
+test('a broken cancel link says so', async ({ page }) => {
+  await page.goto('/#/cancel/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('This link isn’t working.');
+  await expect(page.getByRole('button', { name: 'Back to home' })).toBeVisible();
+});
+
 test('registration shows errors and keeps the user on the form', async ({ page }) => {
   await page.goto('/#/register');
   await page.getByLabel('Full name *').fill('Ada Obi');
@@ -248,6 +287,9 @@ test('organiser confirms a contribution and the total updates', async ({ page })
 test('organiser can edit the gathering and the public page reflects it', async ({ page }) => {
   await signIn(page);
   await page.getByRole('button', { name: 'Event', exact: true }).click();
+  // The start time is a real time picker, so reminders and calendars can use it.
+  await expect(page.getByLabel('Start time (Lagos)')).toHaveAttribute('type', 'time');
+  await expect(page.getByLabel('Start time (Lagos)')).toHaveValue('16:00');
   await page.getByLabel('Venue').fill('Landmark Centre, Lagos');
   await page.getByRole('button', { name: 'Save changes' }).click();
   await expect(page.getByText('Saved.')).toBeVisible();
