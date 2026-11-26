@@ -387,6 +387,30 @@ describe('importing people', () => {
       expect(audience).toHaveLength(28);
     });
 
+    it('gives a lost batch its first result on the retry, even for someone already on the list who unsubscribes meanwhile', async () => {
+      // p1 and p2 are on the list from an earlier import.
+      await send(people.slice(1, 3), 'key-earlier-import-0001');
+      const progress = startImport();
+      let calls = 0;
+      const loseFirstReply = async (batch: typeof people, key: string) => {
+        const r = await send(batch, key);
+        if (++calls === 1) throw new Error('network');
+        return r;
+      };
+      await expect(importInBatches(people, progress, loseFirstReply, maxChars)).rejects.toThrow(
+        'network',
+      );
+      // Before the retry, p1 (already on the list when the lost batch ran) unsubscribes.
+      db.unsubscribed.add('p1@example.com');
+      await importInBatches(people, progress, send, maxChars);
+      // The lost batch keeps its first result: p1 and p2 were already on the list.
+      expect(progress.counts).toEqual({ added: 28, existing: 2, unsubscribed: 0, invalid: 0 });
+      // The unsubscribe still holds.
+      const audience = (await db.updatesAudience('imported')).map((m) => m.email);
+      expect(audience).not.toContain('p1@example.com');
+      expect(audience).toHaveLength(29);
+    });
+
     it('ignores a malformed import key, so the counts fall back to plain ones', async () => {
       const first = await send(people.slice(0, 5), 'x');
       const again = await send(people.slice(0, 5), 'x');

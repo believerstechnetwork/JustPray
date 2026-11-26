@@ -181,7 +181,7 @@ export function importBatches(people: Contact[], maxChars = IMPORT_BATCH_CHARS):
 
 /** How much of a list is saved: the first `done` people, with the counts the server gave them.
  *  `key` goes with every batch of this import, so if a batch is saved but its reply is lost, the
- *  server still counts its people as added when the batch is sent again. */
+ *  server gives back that batch's first result when it is sent again. */
 export interface ImportProgress {
   key: string;
   done: number;
@@ -201,8 +201,8 @@ export const startImport = (): ImportProgress => ({
 /** Send the people after `progress.done` in batches, adding each saved batch to `progress` as it
  *  is saved. If a batch fails, the error is thrown and `progress` still says what was saved, so
  *  calling again with it sends only the rest. A batch whose reply was lost is sent again with the
- *  same key, and the server counts the people it saved the first time as added, so the counts
- *  are never lost or doubled. */
+ *  same key, and the server gives back the result it had the first time, so the counts are never
+ *  lost or doubled. */
 export async function importInBatches(
   people: Contact[],
   progress: ImportProgress,

@@ -41,8 +41,11 @@ export class MemoryDb implements Db {
   unsubscribed = new Set<string>();
   /** People added from an Excel import. */
   contacts: AudienceMember[] = [];
-  /** The import that added each contact, by email (see importContacts). */
-  private importKeys = new Map<string, string>();
+  /** Each import batch's result, by import key and batch (see importContacts). */
+  private importBatches = new Map<
+    string,
+    { added: number; existing: number; unsubscribed: number }
+  >();
   outbox: {
     id: number;
     announcementId: number;
@@ -472,6 +475,11 @@ export class MemoryDb implements Db {
   ): Promise<{ added: number; existing: number; unsubscribed: number }> {
     // Imported membership does not depend on bookings: someone who booked is still added, so an
     // announcement sent to imported people only reaches everyone in the sheet.
+    // A batch already done under this key (sent again after its reply was lost) gets back the
+    // result it had the first time, whatever has changed since.
+    const batchId = importKey ? `${importKey}\n${JSON.stringify(people)}` : null;
+    const stored = batchId ? this.importBatches.get(batchId) : undefined;
+    if (stored) return { ...stored };
     const onList = new Set(this.contacts.map((c) => c.email));
     const result = { added: 0, existing: 0, unsubscribed: 0 };
     // Each address counts once, as in the database (which drops repeats before counting).
@@ -479,18 +487,15 @@ export class MemoryDb implements Db {
     for (const p of people) {
       if (seen.has(p.email)) continue;
       seen.add(p.email);
-      // Added by this same import already (a batch sent again after its reply was lost): still
-      // added, even if they have unsubscribed since (they are never emailed either way).
-      if (importKey && this.importKeys.get(p.email) === importKey) result.added++;
-      else if (this.unsubscribed.has(p.email)) result.unsubscribed++;
+      if (this.unsubscribed.has(p.email)) result.unsubscribed++;
       else if (onList.has(p.email)) result.existing++;
       else {
         this.contacts.push({ name: p.name, email: p.email, source: label });
-        if (importKey) this.importKeys.set(p.email, importKey);
         onList.add(p.email);
         result.added++;
       }
     }
+    if (batchId) this.importBatches.set(batchId, { ...result });
     return result;
   }
 

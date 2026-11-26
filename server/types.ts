@@ -213,8 +213,8 @@ export interface Db {
    *  unsubscribed. Someone on both lists is listed once, as "Booked a seat". */
   updatesAudience(scope?: AudienceScope): Promise<AudienceMember[]>;
   /** Add imported people to the list. Emails are already checked and lower-case. `importKey`
-   *  names one import across its batches: someone this import already added (by a batch whose
-   *  reply was lost, then sent again) counts as added, not as already on the list. */
+   *  names one import across its batches: the same batch sent again under it (after its reply
+   *  was lost) gets back the result it had the first time, whatever has changed since. */
   importContacts(
     people: { name: string; email: string }[],
     label: string,

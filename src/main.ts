@@ -302,7 +302,7 @@ async function submitImport(data: FormData): Promise<void> {
       void loadAnnouncements();
     } else {
       // Kept even though nothing is known to be saved: the first batch may have been saved with
-      // its reply lost, and sending it again under the same key still counts those people once.
+      // its reply lost, and sending it again under the same key gets back that batch's first result.
       S.ann.error = errorMessage(e);
     }
   }

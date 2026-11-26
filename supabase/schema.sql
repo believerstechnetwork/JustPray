@@ -25,7 +25,8 @@ begin
     case when to_regclass('public.announcement_sends') is not null then 'public.announcement_sends' end,
     case when to_regclass('public.announcements') is not null then 'public.announcements' end,
     case when to_regclass('public.contacts') is not null then 'public.contacts' end,
-    case when to_regclass('public.unsubscribes') is not null then 'public.unsubscribes' end);
+    case when to_regclass('public.unsubscribes') is not null then 'public.unsubscribes' end,
+    case when to_regclass('public.import_batches') is not null then 'public.import_batches' end);
   if tables = '' then
     return;
   end if;
@@ -181,9 +182,20 @@ create table if not exists public.contacts (
   source text not null default 'Imported',
   created_at timestamptz not null default now()
 );
--- The import that added each person: a random key the organiser's page gives all the batches of
--- one import, so a batch sent again after its reply was lost still counts its people as added.
-alter table public.contacts add column if not exists import_key text;
+-- The result of each batch of an import, by the random key the organiser's page gives all the
+-- batches of one import and a hash of the batch. A batch sent again after its reply was lost gets
+-- back the result it had the first time, whatever has changed since. Kept for a day.
+create table if not exists public.import_batches (
+  import_key text not null,
+  batch_hash text not null,
+  added integer,
+  existing integer,
+  unsubscribed integer,
+  created_at timestamptz not null default now(),
+  primary key (import_key, batch_hash)
+);
+-- An earlier draft of this kept the key on each contact instead; it is no longer used.
+alter table public.contacts drop column if exists import_key;
 
 -- The outbox: one row per person per published announcement, sent in small batches.
 create table if not exists public.announcement_sends (
@@ -264,10 +276,11 @@ alter table public.announcements enable row level security;
 alter table public.unsubscribes enable row level security;
 alter table public.contacts enable row level security;
 alter table public.announcement_sends enable row level security;
-revoke all on public.announcements, public.unsubscribes, public.contacts, public.announcement_sends
-  from anon, authenticated;
-grant all on public.announcements, public.unsubscribes, public.contacts, public.announcement_sends
-  to service_role;
+alter table public.import_batches enable row level security;
+revoke all on public.announcements, public.unsubscribes, public.contacts, public.announcement_sends,
+  public.import_batches from anon, authenticated;
+grant all on public.announcements, public.unsubscribes, public.contacts, public.announcement_sends,
+  public.import_batches to service_role;
 
 -- Who gets announcements, one row per email, ordered by email and read a page at a time:
 --   p_scope 'booked'   : people who booked a seat and asked to hear about future events
@@ -531,7 +544,8 @@ $$;
 
 -- Add people from an Excel import. p_people is a JSON array of {name, email}. Counts:
 -- added (new), existing (already on the list) and unsubscribed (not added back).
--- Replaced by the version below, which also takes the import's key.
+-- With p_import (the import's key), each batch's result is stored, so a batch sent again after
+-- its reply was lost gets back the same counts. Replaced: the version without the key.
 drop function if exists public.import_contacts(jsonb, text);
 create or replace function public.import_contacts(
   p_people jsonb,
@@ -546,7 +560,22 @@ declare
   total integer;
   blocked integer;
   n_added integer;
+  batch text := md5(p_people::text);
 begin
+  -- With a key, a batch already done (sent again after its reply was lost) gets back the result
+  -- it had the first time. A first try still in progress makes this insert wait for it; if that
+  -- try is saved, the stored result is returned, and if it failed, this one does the work.
+  if p_import is not null then
+    delete from public.import_batches b where b.created_at < now() - interval '1 day';
+    insert into public.import_batches (import_key, batch_hash) values (p_import, batch)
+    on conflict do nothing;
+    if not found then
+      return query
+        select b.added, b.existing, b.unsubscribed from public.import_batches b
+        where b.import_key = p_import and b.batch_hash = batch;
+      return;
+    end if;
+  end if;
   -- Each address is checked against the unsubscribe list once, here, and every count below
   -- comes from that one check, so a change made meanwhile cannot make the totals disagree.
   create temp table import_in on commit drop as
@@ -559,20 +588,15 @@ begin
       where coalesce(trim(x->>'email'), '') <> ''
     ) d;
   select count(*), count(*) filter (where i.blocked) into total, blocked from import_in i;
-  insert into public.contacts (name, email, source, import_key)
-  select i.name, i.email, p_label, p_import from import_in i
+  insert into public.contacts (name, email, source)
+  select i.name, i.email, p_label from import_in i
   where not i.blocked
   on conflict (email) do nothing;
   get diagnostics n_added = row_count;
-  -- With a key, everyone this import added counts as added, including people saved by an earlier
-  -- try of this batch whose reply was lost, even if they have unsubscribed since (they are still
-  -- never emailed, and the insert above never adds anyone unsubscribed). Counted after the
-  -- insert, which waits for such a try still in progress, so this new statement sees its rows.
   if p_import is not null then
-    select count(*) filter (where c.import_key = p_import),
-           count(*) filter (where i.blocked and c.import_key is distinct from p_import)
-    into n_added, blocked
-    from import_in i left join public.contacts c on c.email = i.email;
+    update public.import_batches b
+    set added = n_added, existing = total - n_added - blocked, unsubscribed = blocked
+    where b.import_key = p_import and b.batch_hash = batch;
   end if;
   return query select n_added, total - n_added - blocked, blocked;
 end;
