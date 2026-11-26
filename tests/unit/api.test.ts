@@ -140,6 +140,14 @@ describe('public API', () => {
     expect(data.emailQueued).toBe(false);
   });
 
+  it('still returns the pass if recording "not emailed" fails', async () => {
+    deps.mailer = null;
+    db.markEmailFailed = () => Promise.reject(new Error('db hiccup'));
+    const { status, data } = await call('POST', '/api/reserve', person('a@b.co'));
+    expect(status).toBe(201);
+    expect(data.reservation).toMatchObject({ seat: 1 });
+  });
+
   it('sends the confirmation of a booking made while email was off, once email is set up', async () => {
     deps.mailer = null;
     await call('POST', '/api/reserve', person('a@b.co'));
