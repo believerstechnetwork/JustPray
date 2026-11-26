@@ -345,9 +345,15 @@ export class MemoryDb implements Db {
     return this.unsubscribed.has(email);
   }
 
-  async finishOutbox(id: number, outcome: OutboxOutcome, error?: string): Promise<void> {
+  async finishOutbox(
+    id: number,
+    claimToken: string,
+    outcome: OutboxOutcome,
+    error?: string,
+  ): Promise<void> {
     const o = this.outbox.find((x) => x.id === id);
-    if (!o || (o.status !== 'claimed' && o.status !== 'sending')) return;
+    if (!o || (o.status !== 'claimed' && o.status !== 'sending') || o.claimToken !== claimToken)
+      return;
     o.error = error ? error.slice(0, 200) : null;
     o.finishedAt = this.now().getTime();
     if (outcome === 'skipped') {

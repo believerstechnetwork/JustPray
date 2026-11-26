@@ -41,18 +41,23 @@ export async function processOutbox(deps: OutboxDeps): Promise<{ sent: number; f
         announcements.set(item.announcementId, await db.announcementById(item.announcementId));
       record = announcements.get(item.announcementId);
       if (record && (await db.isUnsubscribed(item.email))) {
-        await db.finishOutbox(item.id, 'skipped', 'unsubscribed');
+        await db.finishOutbox(item.id, item.claimToken, 'skipped', 'unsubscribed');
         return 'skipped';
       }
     } catch (e) {
       log(`Could not prepare outbox item ${item.id}; it will be tried again`, e);
       await db
-        .finishOutbox(item.id, 'retry', 'Could not check the announcement or subscription')
+        .finishOutbox(
+          item.id,
+          item.claimToken,
+          'retry',
+          'Could not check the announcement or subscription',
+        )
         .catch((err: unknown) => log(`Could not requeue outbox item ${item.id}`, err));
       return 'failed';
     }
     if (!record) {
-      await db.finishOutbox(item.id, 'failed', 'announcement not found');
+      await db.finishOutbox(item.id, item.claimToken, 'failed', 'announcement not found');
       return 'failed';
     }
     // The email as it was published; edits made since then only change the home page.
@@ -83,7 +88,7 @@ export async function processOutbox(deps: OutboxDeps): Promise<{ sent: number; f
     } catch (e) {
       log(`Could not start outbox item ${item.id}; it will be tried again`, e);
       await db
-        .finishOutbox(item.id, 'retry', 'Could not start sending')
+        .finishOutbox(item.id, item.claimToken, 'retry', 'Could not start sending')
         .catch((err: unknown) => log(`Could not requeue outbox item ${item.id}`, err));
       return 'failed';
     }
@@ -105,7 +110,7 @@ export async function processOutbox(deps: OutboxDeps): Promise<{ sent: number; f
       if (mailer.isQuota?.(e)) {
         log(`Mail quota reached (${mailer.kind}); outbox item ${item.id} waits`, e);
         await db
-          .finishOutbox(item.id, 'later', `Waiting for the mail quota: ${reason}`)
+          .finishOutbox(item.id, item.claimToken, 'later', `Waiting for the mail quota: ${reason}`)
           .catch((err: unknown) => log(`Could not requeue outbox item ${item.id}`, err));
         return 'quota';
       }
@@ -116,6 +121,7 @@ export async function processOutbox(deps: OutboxDeps): Promise<{ sent: number; f
       await db
         .finishOutbox(
           item.id,
+          item.claimToken,
           retry ? 'retry' : 'failed',
           retry ? reason : `${reason} (may have been delivered; not retried)`,
         )
@@ -127,7 +133,7 @@ export async function processOutbox(deps: OutboxDeps): Promise<{ sent: number; f
     // as failed (never sent again) once it is 10 minutes old.
     for (let attempt = 1; ; attempt++) {
       try {
-        await db.finishOutbox(item.id, 'sent');
+        await db.finishOutbox(item.id, item.claimToken, 'sent');
         break;
       } catch (e) {
         if (attempt >= 3) {
@@ -154,7 +160,7 @@ export async function processOutbox(deps: OutboxDeps): Promise<{ sent: number; f
       if (stop || tried.has(item.id)) {
         stop = true;
         await db
-          .finishOutbox(item.id, 'later', 'Not tried in this run')
+          .finishOutbox(item.id, item.claimToken, 'later', 'Not tried in this run')
           .catch((err: unknown) => log(`Could not requeue outbox item ${item.id}`, err));
         continue;
       }

@@ -603,9 +603,9 @@ describe('review fixes', () => {
     db.contacts.push({ name: 'A', email: 'a@x.co', source: 'Sheet' });
     await db.publishAnnouncement(id, 'imported');
     const realFinish = db.finishOutbox.bind(db);
-    db.finishOutbox = async (i, outcome, e) => {
+    db.finishOutbox = async (i, token, outcome, e) => {
       if (outcome === 'sent') throw new Error('db down');
-      return realFinish(i, outcome, e);
+      return realFinish(i, token, outcome, e);
     };
     await processOutbox({ db, mailer, siteUrl: 'https://jp.test', limit: 10, dailyLimit: 99 });
     expect(mailer.sent).toHaveLength(1);
@@ -785,6 +785,21 @@ describe('review fixes', () => {
     expect(db.outbox[0]).toMatchObject({ status: 'sent', attempts: 1 });
     // Run 1 wakes up: its claim is gone, so it may not start sending.
     expect(await db.beginOutbox(stalled!.id, stalled!.claimToken)).toBe(false);
+  });
+
+  it('never lets a run whose claim expired change an email another run is sending', async () => {
+    await fresh(['a@x.co']);
+    const [stale] = await db.claimOutbox(1, 99);
+    db.outbox[0]!.claimedAt -= 11 * 60_000;
+    // Another run reclaims it and starts sending.
+    const [fresh2] = await db.claimOutbox(1, 99);
+    expect(await db.beginOutbox(fresh2!.id, fresh2!.claimToken)).toBe(true);
+    // The stale run's lookup fails and it tries to put the email back in the queue: no effect.
+    await db.finishOutbox(stale!.id, stale!.claimToken, 'retry', 'lookup failed');
+    expect(db.outbox[0]).toMatchObject({ status: 'sending', attempts: 0 });
+    // The run that holds the claim records the result.
+    await db.finishOutbox(fresh2!.id, fresh2!.claimToken, 'sent');
+    expect(db.outbox[0]?.status).toBe('sent');
   });
 
   it('lets only the run holding the claim start sending', async () => {

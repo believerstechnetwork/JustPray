@@ -452,10 +452,16 @@ export class SupabaseDb implements Db {
     return res === true;
   }
 
-  async finishOutbox(id: number, outcome: OutboxOutcome, error?: string): Promise<void> {
+  async finishOutbox(
+    id: number,
+    claimToken: string,
+    outcome: OutboxOutcome,
+    error?: string,
+  ): Promise<void> {
     check(
       await this.sb.rpc('finish_announcement_send', {
         p_id: id,
+        p_token: claimToken,
         p_outcome: outcome,
         p_error: error ?? null,
       }),

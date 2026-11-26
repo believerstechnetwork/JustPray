@@ -402,10 +402,10 @@ describe('SupabaseDb', () => {
       path: '/rest/v1/rpc/begin_announcement_send',
       body: { p_id: 9, p_token: 'ct' },
     });
-    await db.finishOutbox(9, 'retry', 'smtp');
+    await db.finishOutbox(9, 'ct', 'retry', 'smtp');
     expect(seen[3]).toMatchObject({
       path: '/rest/v1/rpc/finish_announcement_send',
-      body: { p_id: 9, p_outcome: 'retry', p_error: 'smtp' },
+      body: { p_id: 9, p_token: 'ct', p_outcome: 'retry', p_error: 'smtp' },
     });
     expect(await db.importContacts([{ name: 'A', email: 'a@b.co' }], 'Sheet')).toEqual({
       added: 2,

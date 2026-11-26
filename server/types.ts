@@ -182,12 +182,18 @@ export interface Db {
   /** Switch a claimed email to sending, just before it goes out. False when this run no longer
    *  holds the claim (it stalled and the claim was given back or taken): then it must not send. */
   beginOutbox(id: number, claimToken: string): Promise<boolean>;
-  /** Record what happened to one claimed email: `sent`; `retry` (nothing went out: back in the
+  /** Record what happened to one claimed email, by the run holding its claim token (a run
+   *  whose claim has expired changes nothing): `sent`; `retry` (nothing went out: back in the
    *  queue, failed after 3 attempts in all); `failed` (closed, never retried, because it may
    *  have gone out or can never go); `skipped` (closed unsent: the person unsubscribed); or
    *  `later` (not sent because the mail service's quota is used up: back in the queue without
    *  using an attempt). */
-  finishOutbox(id: number, outcome: OutboxOutcome, error?: string): Promise<void>;
+  finishOutbox(
+    id: number,
+    claimToken: string,
+    outcome: OutboxOutcome,
+    error?: string,
+  ): Promise<void>;
   isUnsubscribed(email: string): Promise<boolean>;
   /** Unsubscribe the person behind an unsubscribe link. Returns their email, or null. */
   unsubscribe(token: string): Promise<string | null>;

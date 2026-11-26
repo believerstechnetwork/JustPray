@@ -303,11 +303,14 @@ $$;
 --   failed   closed and never retried (it may have gone out, or can never go);
 --   skipped  closed unsent, because the person unsubscribed;
 --   later    not sent because the mail service's quota is used up: back in the queue, no attempt used.
--- Only a row still claimed (or being sent) changes.
+-- Only a row still claimed (or being sent) by the run holding p_token changes: a run whose claim
+-- expired can never touch an email another run has taken since.
 drop function if exists public.finish_announcement_send(bigint, boolean, text);
 drop function if exists public.finish_announcement_send(bigint, boolean, text, boolean);
+drop function if exists public.finish_announcement_send(bigint, text, text);
 create or replace function public.finish_announcement_send(
   p_id bigint,
+  p_token text,
   p_outcome text,
   p_error text default null
 )
@@ -322,7 +325,7 @@ begin
     update public.announcement_sends s
     set status = 'sent', sent_at = now(), finished_at = now(), attempts = s.attempts + 1,
         error = null
-    where s.id = p_id and s.status in ('claimed', 'sending')
+    where s.id = p_id and s.status in ('claimed', 'sending') and s.claim_token = p_token
     returning s.announcement_id into ann;
     if ann is not null then
       update public.announcements a set sent_count = a.sent_count + 1 where a.id = ann;
@@ -330,24 +333,24 @@ begin
   elsif p_outcome = 'skipped' then
     update public.announcement_sends s
     set status = 'skipped', error = left(p_error, 200), finished_at = now()
-    where s.id = p_id and s.status in ('claimed', 'sending');
+    where s.id = p_id and s.status in ('claimed', 'sending') and s.claim_token = p_token;
   elsif p_outcome = 'retry' then
     update public.announcement_sends s
     set attempts = s.attempts + 1,
         error = left(p_error, 200),
         finished_at = now(),
         status = case when s.attempts + 1 >= 3 then 'failed' else 'pending' end
-    where s.id = p_id and s.status in ('claimed', 'sending');
+    where s.id = p_id and s.status in ('claimed', 'sending') and s.claim_token = p_token;
   elsif p_outcome = 'later' then
     -- The mail service's quota is used up: back in the queue, without using an attempt.
     update public.announcement_sends s
     set status = 'pending', error = left(p_error, 200), finished_at = now()
-    where s.id = p_id and s.status in ('claimed', 'sending');
+    where s.id = p_id and s.status in ('claimed', 'sending') and s.claim_token = p_token;
   elsif p_outcome = 'failed' then
     update public.announcement_sends s
     set attempts = s.attempts + 1, error = left(p_error, 200), status = 'failed',
         finished_at = now()
-    where s.id = p_id and s.status in ('claimed', 'sending');
+    where s.id = p_id and s.status in ('claimed', 'sending') and s.claim_token = p_token;
   else
     raise exception 'Unknown send outcome: %', p_outcome;
   end if;
@@ -439,7 +442,7 @@ revoke execute on function public.updates_audience(text, text, integer) from pub
 revoke execute on function public.publish_announcement(bigint, text) from public, anon, authenticated;
 revoke execute on function public.claim_announcement_sends(integer, integer) from public, anon, authenticated;
 revoke execute on function public.begin_announcement_send(bigint, text) from public, anon, authenticated;
-revoke execute on function public.finish_announcement_send(bigint, text, text) from public, anon, authenticated;
+revoke execute on function public.finish_announcement_send(bigint, text, text, text) from public, anon, authenticated;
 revoke execute on function public.unsubscribe_by_token(text) from public, anon, authenticated;
 revoke execute on function public.import_contacts(jsonb, text) from public, anon, authenticated;
 revoke execute on function public.resubscribe_by_token(text) from public, anon, authenticated;
@@ -450,7 +453,7 @@ grant execute on function public.updates_audience(text, text, integer) to servic
 grant execute on function public.publish_announcement(bigint, text) to service_role;
 grant execute on function public.claim_announcement_sends(integer, integer) to service_role;
 grant execute on function public.begin_announcement_send(bigint, text) to service_role;
-grant execute on function public.finish_announcement_send(bigint, text, text) to service_role;
+grant execute on function public.finish_announcement_send(bigint, text, text, text) to service_role;
 grant execute on function public.unsubscribe_by_token(text) to service_role;
 grant execute on function public.import_contacts(jsonb, text) to service_role;
 
