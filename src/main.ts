@@ -16,7 +16,13 @@ import {
 } from './state';
 import { previewInner } from './views/announcements';
 import { unsubscribe } from './views/unsubscribe';
-import { MAX_IMPORT_PEOPLE, importInBatches, readContactsFile, startImport } from './lib/contacts';
+import {
+  ImportExpiredError,
+  MAX_IMPORT_PEOPLE,
+  importInBatches,
+  readContactsFile,
+  startImport,
+} from './lib/contacts';
 import { admin } from './views/admin';
 import { cancel } from './views/cancel';
 import { confirmed } from './views/confirmed';
@@ -295,7 +301,12 @@ async function submitImport(data: FormData): Promise<void> {
     im.progress = null;
     void loadAnnouncements();
   } catch (e) {
-    if (progress.done) {
+    if (e instanceof ImportExpiredError) {
+      // Too old to resume with exact counts: the next press is a new import of the whole list.
+      im.progress = null;
+      S.ann.error =
+        'This import stopped more than a day ago, so it can no longer be resumed. Press Import to import the whole list again as a new import; people saved earlier will show as already on the list.';
+    } else if (progress.done) {
       const n = progress.done.toLocaleString('en-GB');
       const of = im.contacts.length.toLocaleString('en-GB');
       S.ann.error = `At least ${n} of ${of} people are saved; the import stopped before the rest. ${errorMessage(e)} Press Import again to send the rest; nobody is added twice.`;

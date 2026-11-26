@@ -184,7 +184,8 @@ create table if not exists public.contacts (
 );
 -- The result of each batch of an import, by the random key the organiser's page gives all the
 -- batches of one import and a hash of the batch. A batch sent again after its reply was lost gets
--- back the result it had the first time, whatever has changed since. Kept for a day.
+-- back the result it had the first time, whatever has changed since. Kept for 7 days; the page
+-- only resumes an import within a day of starting it (IMPORT_RESUME_MS), well inside that.
 create table if not exists public.import_batches (
   import_key text not null,
   batch_hash text not null,
@@ -566,7 +567,7 @@ begin
   -- it had the first time. A first try still in progress makes this insert wait for it; if that
   -- try is saved, the stored result is returned, and if it failed, this one does the work.
   if p_import is not null then
-    delete from public.import_batches b where b.created_at < now() - interval '1 day';
+    delete from public.import_batches b where b.created_at < now() - interval '7 days';
     insert into public.import_batches (import_key, batch_hash) values (p_import, batch)
     on conflict do nothing;
     if not found then

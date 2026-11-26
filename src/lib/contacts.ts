@@ -184,6 +184,8 @@ export function importBatches(people: Contact[], maxChars = IMPORT_BATCH_CHARS):
  *  server gives back that batch's first result when it is sent again. */
 export interface ImportProgress {
   key: string;
+  /** When the import started (ms). It can be resumed for IMPORT_RESUME_MS after that. */
+  startedAt: number;
   done: number;
   counts: ImportOutcome;
 }
@@ -192,8 +194,21 @@ const randomKey = (): string =>
   globalThis.crypto?.randomUUID?.() ??
   Array.from({ length: 4 }, () => Math.random().toString(36).slice(2, 10)).join('-');
 
-export const startImport = (): ImportProgress => ({
+/** How long an interrupted import can be resumed. The server keeps each batch's result for 7
+ *  days, so a resumed batch always gets its first result back. After this, the organiser chooses
+ *  the file again, which is a new import with counts of its own. */
+export const IMPORT_RESUME_MS = 24 * 60 * 60 * 1000;
+
+/** Thrown when resuming an import that started more than IMPORT_RESUME_MS ago. Nothing is sent. */
+export class ImportExpiredError extends Error {
+  constructor() {
+    super('This import stopped too long ago to resume.');
+  }
+}
+
+export const startImport = (now = Date.now()): ImportProgress => ({
   key: randomKey(),
+  startedAt: now,
   done: 0,
   counts: { added: 0, existing: 0, unsubscribed: 0, invalid: 0 },
 });
@@ -208,7 +223,9 @@ export async function importInBatches(
   progress: ImportProgress,
   send: (batch: Contact[], key: string) => Promise<ImportOutcome>,
   maxChars = IMPORT_BATCH_CHARS,
+  now = Date.now(),
 ): Promise<void> {
+  if (now - progress.startedAt > IMPORT_RESUME_MS) throw new ImportExpiredError();
   for (const batch of importBatches(people.slice(progress.done), maxChars)) {
     const r = await send(batch, progress.key);
     progress.counts.added += r.added;

@@ -6,6 +6,8 @@ import { GmailMailer, MemoryMailer, ResendMailer } from '../../server/mailer';
 import { MemoryDb } from '../../server/memory-db';
 import { processOutbox } from '../../server/outbox';
 import {
+  IMPORT_RESUME_MS,
+  ImportExpiredError,
   importBatches,
   importInBatches,
   parseCsv,
@@ -409,6 +411,33 @@ describe('importing people', () => {
       const audience = (await db.updatesAudience('imported')).map((m) => m.email);
       expect(audience).not.toContain('p1@example.com');
       expect(audience).toHaveLength(29);
+    });
+
+    it('resumes within a day of starting, and refuses after that without sending anything', async () => {
+      const start = Date.UTC(2027, 0, 1, 9);
+      const progress = startImport(start);
+      let calls = 0;
+      const failSecond = async (batch: typeof people, key: string) => {
+        if (++calls === 2) throw new Error('network');
+        return send(batch, key);
+      };
+      await expect(importInBatches(people, progress, failSecond, maxChars, start)).rejects.toThrow(
+        'network',
+      );
+      const saved = progress.done;
+
+      // More than a day later: refused before any request, and progress is left as it was.
+      let sentLate = 0;
+      const late = start + IMPORT_RESUME_MS + 1;
+      await expect(
+        importInBatches(people, progress, async (b, k) => (sentLate++, send(b, k)), maxChars, late),
+      ).rejects.toBeInstanceOf(ImportExpiredError);
+      expect(sentLate).toBe(0);
+      expect(progress.done).toBe(saved);
+
+      // Just inside the day: resumes and finishes with exact counts.
+      await importInBatches(people, progress, send, maxChars, start + IMPORT_RESUME_MS);
+      expect(progress).toMatchObject(done);
     });
 
     it('ignores a malformed import key, so the counts fall back to plain ones', async () => {
