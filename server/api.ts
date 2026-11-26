@@ -226,7 +226,13 @@ export function validAnnouncement(body: unknown): AnnouncementFields {
     subject: str('subject'),
     message: str('message'),
   };
-  const isDate = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d));
+  // A real calendar day: the parsed date must give back the same year, month and day, so an
+  // overflow such as 2027-02-30 (which would roll into March) is refused.
+  const isDate = (d: string): boolean => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+    const t = Date.parse(`${d}T00:00:00Z`);
+    return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === d;
+  };
   if (!f.title || !f.summary || !f.subject || !f.message)
     throw new HttpError(400, 'Fill in the title, summary, subject and message.');
   if (!f.venue && !f.venueTba)

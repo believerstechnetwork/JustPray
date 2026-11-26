@@ -262,12 +262,11 @@ export class MemoryDb implements Db {
   async publishAnnouncement(id: number, scope: AudienceScope): Promise<AnnouncementRecord | null> {
     const a = this.announcements.find((x) => x.id === id);
     if (!a || a.status !== 'draft') return null;
-    // Mark it published before the first await, so a second publish running at the same time
-    // finds it already taken and queues nothing (as the database's row lock does).
-    a.status = 'published';
+    // Everything is prepared and stored in one step with no await in between, like the
+    // database's single transaction: nothing reads a half-published announcement, and a second
+    // publish finds it already published and queues nothing.
+    const people = this.audienceNow(scope);
     const snapshot: AnnouncementRecord = { ...a, emailContent: null };
-    a.emailContent = snapshot;
-    const people = await this.updatesAudience(scope);
     for (const p of people)
       this.outbox.push({
         id: this.nextId++,
@@ -284,6 +283,8 @@ export class MemoryDb implements Db {
         claimToken: null,
       });
     Object.assign(a, {
+      status: 'published',
+      emailContent: snapshot,
       publishedAt: this.now().toISOString(),
       recipients: people.length,
       audience: scope,
@@ -324,7 +325,7 @@ export class MemoryDb implements Db {
     const n = Math.max(0, Math.min(limit, dailyLimit - sentToday));
     // Fresh emails first; ones being retried wait behind them.
     const claimed = this.outbox
-      .filter((o) => o.status === 'pending')
+      .filter((o) => o.status === 'pending' && !this.unsubscribed.has(o.email))
       .sort((x, y) => x.attempts - y.attempts || x.id - y.id)
       .slice(0, n);
     for (const o of claimed)
@@ -414,6 +415,10 @@ export class MemoryDb implements Db {
   }
 
   async updatesAudience(scope: AudienceScope = 'all'): Promise<AudienceMember[]> {
+    return this.audienceNow(scope);
+  }
+
+  private audienceNow(scope: AudienceScope): AudienceMember[] {
     const seen = new Map<string, AudienceMember>();
     if (scope !== 'imported')
       for (const r of this.reservations)

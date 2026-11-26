@@ -44,7 +44,10 @@ still work but no email is sent (the organiser view shows a warning).
   unsubscribe link, and anyone who unsubscribes is never emailed one again or added back.
 - **Sending:** announcement emails wait in an outbox. A first batch goes out on publishing, then
   `send-announcements` sends the next batch every two minutes, up to `ANNOUNCE_DAILY_LIMIT`
-  (default 350) a day so Gmail's limit is never hit; a large list finishes the next day. Each
+  (default 350) a day; a large list finishes the next day. Scheduled functions run on the live
+  site only, so a preview deploy sends just the first batch. The 350 leaves headroom under
+  Gmail's daily limit (about 500), but booking confirmations and anything else the account sends
+  count toward Gmail's limit too, so lower it if the account is busy. Each
   person gets an email at most once: a send the mail service refused is retried (3 attempts in
   all), but one that may have gone out (a timeout, a server error, or a run that stopped mid-send) is not. If the mail service's own quota is used up, the rest wait in the queue for the next runs without using their attempts. Each email is sent as it was when published; editing a published event changes the home page only.
 - **Support:** the giver picks naira or dollars, an amount, and enters their name and email. They get the

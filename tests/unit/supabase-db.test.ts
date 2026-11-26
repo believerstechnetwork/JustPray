@@ -424,13 +424,20 @@ describe('SupabaseDb', () => {
       end_date: end,
       status: 'published',
     });
-    // A full first page of events already under way, then today's event on the second page.
-    const running = Array.from({ length: 500 }, (_, i) => row(i + 1, '2027-01-01', '2027-01-30'));
-    const { db, seen } = fakeSupabase([{ body: running }, { body: [row(501, '2027-01-05')] }]);
+    // The server caps the first page at 100 events already under way; today's event is on the
+    // next page, and an empty page ends the reading.
+    const running = Array.from({ length: 100 }, (_, i) => row(i + 1, '2027-01-01', '2027-01-30'));
+    const { db, seen } = fakeSupabase([
+      { body: running },
+      { body: [row(501, '2027-01-05')] },
+      { body: [] },
+    ]);
     const list = await db.upcomingAnnouncements('2027-01-05', 3);
-    // The newest event dated today comes first, even though it was on the last page.
-    expect(list.map((a) => a.id)).toEqual([501, 500, 499]);
-    expect(seen).toHaveLength(2);
+    // Today's event comes first, even though it was on a later page; then the newest running ones.
+    expect(list.map((a) => a.id)).toEqual([501, 100, 99]);
+    expect(seen).toHaveLength(3);
+    expect(seen[1]?.path).toContain('/rest/v1/announcements');
+    expect(seen[1]?.query).toContain('id=gt.100');
   });
 
   it('reads the whole mailing list a page at a time, by email', async () => {

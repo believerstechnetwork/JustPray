@@ -562,6 +562,9 @@ async function annAction(action: string, el: HTMLElement): Promise<void> {
     case 'ann-publish': {
       if (S.busy) return;
       S.busy = true;
+      // Show the buttons as busy straight away (render keeps what is typed and where focus is).
+      syncAnnForm();
+      render();
       // Publishing sends what was saved, so the dialog only opens once the saved draft matches
       // the form. The fields stay editable while a save is on its way: if anything changed
       // meanwhile, save again (a few times at most) before asking.
@@ -923,7 +926,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key !== 'Tab') return;
   const items = [
     ...dialog.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), input:not([disabled]), a[href]',
+      'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href]',
     ),
   ];
   const first = items[0];
@@ -964,6 +967,9 @@ document.addEventListener('submit', (e) => {
     return;
   }
   if (kind === 'announcement') {
+    // One save at a time: a second one (Save draft or Enter while Publish is saving) would create
+    // a second draft, and whichever finished first would clear the busy flag of the other.
+    if (S.busy) return;
     void (async () => {
       S.busy = true;
       render();

@@ -307,6 +307,9 @@ begin
     where s.id in (
       select s2.id from public.announcement_sends s2
       where s2.status = 'pending'
+        -- A row can come back to pending after the skip above ran (a refused send being retried):
+        -- never spend today's allowance on someone who has unsubscribed. The next run skips it.
+        and not exists (select 1 from public.unsubscribes u where u.email = s2.email)
       -- Fresh emails first; ones being retried wait behind them.
       order by s2.attempts, s2.id
       limit take
@@ -401,6 +404,9 @@ as $$
 declare
   who text;
 begin
+  -- Take turns with claim_announcement_sends (same lock), which also changes send rows and the
+  -- announcement's counts; without it the two could each wait on a row the other holds.
+  perform pg_advisory_xact_lock(727211);
   select s.email into who from public.announcement_sends s where s.unsub_token = p_token;
   if who is null then
     return null;
@@ -456,17 +462,21 @@ declare
   blocked integer;
   inserted integer;
 begin
+  -- Each address is checked against the unsubscribe list once, here, and every count below
+  -- comes from that one check, so a change made meanwhile cannot make the totals disagree.
   create temp table import_in on commit drop as
-    select distinct on (lower(trim(x->>'email')))
-      coalesce(trim(x->>'name'), '') as name, lower(trim(x->>'email')) as email
-    from jsonb_array_elements(p_people) x
-    where coalesce(trim(x->>'email'), '') <> '';
-  select count(*) into total from import_in;
-  select count(*) into blocked from import_in i
-  where exists (select 1 from public.unsubscribes u where u.email = i.email);
+    select d.name, d.email,
+           exists (select 1 from public.unsubscribes u where u.email = d.email) as blocked
+    from (
+      select distinct on (lower(trim(x->>'email')))
+        coalesce(trim(x->>'name'), '') as name, lower(trim(x->>'email')) as email
+      from jsonb_array_elements(p_people) x
+      where coalesce(trim(x->>'email'), '') <> ''
+    ) d;
+  select count(*), count(*) filter (where i.blocked) into total, blocked from import_in i;
   insert into public.contacts (name, email, source)
   select i.name, i.email, p_label from import_in i
-  where not exists (select 1 from public.unsubscribes u where u.email = i.email)
+  where not i.blocked
   on conflict (email) do nothing;
   get diagnostics inserted = row_count;
   return query select inserted, total - inserted - blocked, blocked;

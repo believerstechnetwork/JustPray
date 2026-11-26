@@ -245,7 +245,8 @@ export interface AudienceMember {
 export interface ImportResult {
   /** Newly added to the list. */
   added: number;
-  /** Already on the list (imported before, or booked and asked for updates). */
+  /** Already imported (a contact row exists) and still subscribed. Someone who only booked a seat
+   *  has no contact row yet, so importing them counts as added. */
   existing: number;
   /** Unsubscribed earlier, so not added back. */
   unsubscribed: number;
@@ -267,8 +268,11 @@ export interface Mailer {
   /** Name used in logs, e.g. "gmail". */
   readonly kind: string;
   send(email: Email): Promise<void>;
-  /** True when a failed send certainly delivered nothing (or the service drops repeats), so
-   *  sending it again cannot reach the person twice. Without it, a failed send is never retried. */
+  /** True only when the mail service confirmed it did not accept the message (it refused it, or
+   *  the send never reached it), so sending again cannot reach the person twice. An uncertain
+   *  outcome such as a timeout must return false, even where the service drops repeats by an
+   *  idempotency key: that protection expires, and does not carry over to another service.
+   *  Without this method, a failed send is never retried. */
   canRetry?(error: unknown): boolean;
   /** True when the service refused because its sending quota is used up for now. Those emails
    *  wait for the quota to reset instead of using up their attempts. */

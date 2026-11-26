@@ -230,6 +230,17 @@ describe('publishing and sending', () => {
     expect(mailer.sent.map((m) => m.to)).not.toContain('quiet@example.com');
   });
 
+  it('refuses a date that does not exist, and keeps leap days', async () => {
+    const post = (date: string, endDate: string | null = null) =>
+      call('POST', '/api/admin/announcements', { ...ANN, date, endDate });
+    // 30 February would otherwise roll over into March.
+    expect((await post('2027-02-30')).status).toBe(400);
+    expect((await post('2027-09-09', '2027-09-31')).status).toBe(400);
+    expect((await post('2027-13-01')).status).toBe(400);
+    expect((await post('2028-02-29')).status).toBe(201);
+    expect((await post('2027-09-09', '2027-09-09')).status).toBe(201);
+  });
+
   it('publishes once, and refuses an unknown audience', async () => {
     const id = await draft();
     expect(
@@ -422,7 +433,7 @@ describe('review fixes', () => {
     });
   });
 
-  it('sends an idempotency key to Resend, so a retried email is never delivered twice', async () => {
+  it('forwards the idempotency key in the Resend request header', async () => {
     const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
     const resend = new ResendMailer('key', 'Just Pray <hi@x.co>');
@@ -461,6 +472,19 @@ describe('review fixes', () => {
         await failWith(() => Promise.reject(new DOMException('timed out', 'TimeoutError'))),
       ),
     ).toBe(false);
+  });
+
+  it('gives each Gmail send one deadline for the whole exchange', async () => {
+    const gmail = new GmailMailer('me@gmail.com', 'app password');
+    const sendMail = vi.fn(async () => ({}));
+    (gmail as unknown as { transport: { sendMail: typeof sendMail } }).transport = { sendMail };
+    await gmail.send({ to: 'a@b.co', subject: 's', text: 't', html: 'h', idempotencyKey: 'k' });
+    const options = (sendMail.mock.calls[0] as unknown as [Record<string, unknown>])[0];
+    expect(options.signal).toBeInstanceOf(AbortSignal);
+    // Gmail has no idempotency keys, so none is passed on.
+    expect(options).not.toHaveProperty('idempotencyKey');
+    // An aborted send may have been accepted, so it is never retried.
+    expect(gmail.canRetry(Object.assign(new Error('aborted'), { code: 'EABORT' }))).toBe(false);
   });
 
   it('retries a Gmail failure only when Gmail certainly did not take the email', () => {
@@ -813,6 +837,7 @@ describe('review fixes', () => {
     const now = vi.spyOn(Date, 'now').mockImplementation(() => clock);
     try {
       // The announcement lookup is slow: it ends after the 100 ms budget.
+      const begin = vi.spyOn(db, 'beginOutbox');
       const lookup = db.announcementById.bind(db);
       db.announcementById = async (id) => {
         clock += 200;
@@ -828,12 +853,39 @@ describe('review fixes', () => {
           timeBudgetMs: 100,
         }),
       ).toEqual({ sent: 0, failed: 0 });
+      // Caught before sending even started, not only by the check after it.
+      expect(begin).not.toHaveBeenCalled();
     } finally {
       now.mockRestore();
     }
     // Nothing went out, and the email waits for the next run without using an attempt.
     expect(mailer.sent).toHaveLength(0);
     expect(db.outbox.every((o) => o.status === 'pending' && o.attempts === 0)).toBe(true);
+  });
+
+  it('keeps an event that starts today ahead of newer ones already under way', async () => {
+    const base = {
+      ...ANN,
+      time: null,
+      theme: null,
+      imageUrl: null,
+      linkUrl: null,
+      linkLabel: null,
+    };
+    const make = async (date: string, endDate: string | null) => {
+      const a = await db.createAnnouncement({ ...base, date, endDate });
+      db.contacts.push({ name: 'A', email: `q${a.id}@x.co`, source: 'S' });
+      await db.publishAnnouncement(a.id, 'imported');
+      return a.id;
+    };
+    const today = await make('2027-01-05', null);
+    const running = [
+      await make('2027-01-01', '2027-01-10'),
+      await make('2027-01-02', '2027-01-10'),
+      await make('2027-01-03', '2027-01-10'),
+    ];
+    const ids = (await db.upcomingAnnouncements('2027-01-05', 3)).map((a) => a.id);
+    expect(ids).toEqual([today, running[2], running[1]]);
   });
 
   it('lists an event already under way as starting today, newest first on the same day', async () => {

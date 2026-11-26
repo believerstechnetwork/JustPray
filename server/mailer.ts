@@ -14,6 +14,8 @@ export interface MailEnv {
 }
 
 const DEFAULT_NAME = 'Just Pray';
+/** Longest one Gmail send may take, start to finish. */
+export const GMAIL_SEND_DEADLINE_MS = 12_000;
 
 /** Gmail through SMTP with an app password. */
 export class GmailMailer implements Mailer {
@@ -47,6 +49,10 @@ export class GmailMailer implements Mailer {
       text,
       html,
       headers,
+      // A deadline for the whole SMTP exchange, not just each step, so a send started near the
+      // scheduled sender's 15-second budget still ends inside the platform's 30-second limit.
+      // An aborted send may have been accepted, so it is closed as failed, not retried.
+      signal: AbortSignal.timeout(GMAIL_SEND_DEADLINE_MS),
     });
   }
 
