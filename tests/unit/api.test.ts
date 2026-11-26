@@ -550,6 +550,20 @@ describe('cancelling a seat', () => {
     expect(db.reservations[0]?.status).toBe('active');
   });
 
+  it('says the link no longer works when it is replaced between the check and the cancel', async () => {
+    const token = await book();
+    // The booking is cancelled and booked again (new link) just as this request cancels.
+    const real = db.cancelReservation.bind(db);
+    db.cancelReservation = async (id, hash) => {
+      const r = db.reservations.find((x) => x.id === id);
+      if (r) r.cancelHash = 'replaced-by-a-new-booking';
+      return real(id, hash);
+    };
+    const res = await call('POST', '/api/cancel', { token });
+    expect(res.status).toBe(404);
+    expect(db.reservations[0]?.status).toBe('active');
+  });
+
   it('shows cancelled seats to organisers and counts only held seats', async () => {
     const token = await book();
     await book('bola@example.com');

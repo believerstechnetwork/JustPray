@@ -380,9 +380,12 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
         const view = cancelView({ ...found, reservation: { ...r, status: 'cancelled' } });
         return json(200, { ...view, reserved: await db().reservedCount() });
       }
-      // Already cancelled (perhaps a moment ago, in another tab), or too late: say how things
-      // stand rather than fail.
-      return json(200, cancelView((await lookUpCancel(body)) ?? found));
+      // Nothing changed: read the booking again rather than trust the earlier lookup. Already
+      // cancelled (perhaps a moment ago, in another tab) or too late: say how things stand. The
+      // link replaced meanwhile (cancelled and booked again): this link no longer works.
+      const latest = await lookUpCancel(body);
+      if (!latest) return fail(404, BAD_LINK);
+      return json(200, cancelView(latest));
     }
 
     if (path === '/api/contributions' && method === 'POST') {
