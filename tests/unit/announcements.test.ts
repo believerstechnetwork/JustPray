@@ -498,6 +498,9 @@ describe('review fixes', () => {
     expect(tries).toBe(1);
     expect(db.outbox[0]).toMatchObject({ status: 'failed', attempts: 1 });
     expect(db.outbox[0]?.error).toMatch(/may have been delivered/);
+    // Counted for 24 hours from when the attempt ended, not from when it was claimed.
+    db.outbox[0]!.claimedAt -= 25 * 3_600_000;
+    db.outbox[0]!.finishedAt! -= 23 * 3_600_000;
     // It still counts toward today's limit.
     db.contacts.push({ name: 'B', email: 'b@x.co', source: 'Sheet' });
     const id2 = (

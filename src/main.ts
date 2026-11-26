@@ -461,9 +461,14 @@ async function saveAnnouncement(): Promise<number | null> {
 }
 
 /** Reload the other-events list the home page shows, after publishing or editing one. */
+let upcomingRequest = 0;
 async function refreshUpcoming(): Promise<void> {
+  // Two publishes in a row start two refreshes; only the latest one's answer is kept.
+  const request = ++upcomingRequest;
   try {
-    S.upcoming = (await api.publicInfo()).upcoming ?? [];
+    const upcoming = (await api.publicInfo()).upcoming ?? [];
+    if (request !== upcomingRequest) return;
+    S.upcoming = upcoming;
   } catch {
     return; // the next page load picks it up
   }

@@ -123,9 +123,12 @@ create table if not exists public.announcement_sends (
   attempts integer not null default 0,
   claimed_at timestamptz,
   sent_at timestamptz,
+  -- When the last attempt ended (sent, failed or given up as stale).
+  finished_at timestamptz,
   error text,
   unique (announcement_id, email)
 );
+alter table public.announcement_sends add column if not exists finished_at timestamptz;
 create index if not exists announcement_sends_pending
   on public.announcement_sends (id) where status = 'pending';
 create index if not exists announcement_sends_sent_at
@@ -217,20 +220,22 @@ begin
   -- A claim older than 10 minutes belongs to a run that died, maybe after the email went out.
   -- Close it as failed rather than risk sending it twice.
   update public.announcement_sends s
-  set status = 'failed', attempts = s.attempts + 1, error = 'Sending did not finish'
+  set status = 'failed', attempts = s.attempts + 1, error = 'Sending did not finish',
+      finished_at = now()
   where s.status = 'sending' and s.claimed_at < now() - interval '10 minutes';
   -- Anyone who unsubscribed since publishing gets nothing more.
   update public.announcement_sends s
   set status = 'skipped'
   where s.status = 'pending'
     and exists (select 1 from public.unsubscribes u where u.email = s.email);
-  -- Emails being sent right now, and failed ones claimed in the last 24 hours (a run that died
-  -- or a timeout may still have delivered them), count toward today's limit too.
+  -- Emails being sent right now, and failed ones whose attempt ended in the last 24 hours (a run
+  -- that died or a timeout may still have delivered them), count toward today's limit too.
   select count(*) into sent_today
   from public.announcement_sends s
   where s.sent_at > now() - interval '24 hours'
      or s.status = 'sending'
-     or (s.status = 'failed' and s.claimed_at > now() - interval '24 hours');
+     or (s.status = 'failed'
+         and coalesce(s.finished_at, s.claimed_at) > now() - interval '24 hours');
   take := greatest(0, least(p_limit, p_daily - sent_today));
   return query
     update public.announcement_sends s
@@ -268,24 +273,28 @@ declare
 begin
   if p_outcome = 'sent' then
     update public.announcement_sends s
-    set status = 'sent', sent_at = now(), attempts = s.attempts + 1, error = null
+    set status = 'sent', sent_at = now(), finished_at = now(), attempts = s.attempts + 1,
+        error = null
     where s.id = p_id and s.status = 'sending'
     returning s.announcement_id into ann;
     if ann is not null then
       update public.announcements a set sent_count = a.sent_count + 1 where a.id = ann;
     end if;
   elsif p_outcome = 'skipped' then
-    update public.announcement_sends s set status = 'skipped', error = left(p_error, 200)
+    update public.announcement_sends s
+    set status = 'skipped', error = left(p_error, 200), finished_at = now()
     where s.id = p_id and s.status = 'sending';
   elsif p_outcome = 'retry' then
     update public.announcement_sends s
     set attempts = s.attempts + 1,
         error = left(p_error, 200),
+        finished_at = now(),
         status = case when s.attempts + 1 >= 3 then 'failed' else 'pending' end
     where s.id = p_id and s.status = 'sending';
   elsif p_outcome = 'failed' then
     update public.announcement_sends s
-    set attempts = s.attempts + 1, error = left(p_error, 200), status = 'failed'
+    set attempts = s.attempts + 1, error = left(p_error, 200), status = 'failed',
+        finished_at = now()
     where s.id = p_id and s.status = 'sending';
   else
     raise exception 'Unknown send outcome: %', p_outcome;

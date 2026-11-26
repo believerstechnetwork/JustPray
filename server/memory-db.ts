@@ -50,6 +50,8 @@ export class MemoryDb implements Db {
     attempts: number;
     claimedAt: number;
     sentAt: number | null;
+    /** When the last attempt ended. */
+    finishedAt: number | null;
     error: string | null;
   }[] = [];
   private nextId = 1;
@@ -261,6 +263,7 @@ export class MemoryDb implements Db {
         attempts: 0,
         claimedAt: 0,
         sentAt: null,
+        finishedAt: null,
         error: null,
       });
     Object.assign(a, {
@@ -282,18 +285,19 @@ export class MemoryDb implements Db {
           status: 'failed',
           attempts: o.attempts + 1,
           error: 'Sending did not finish',
+          finishedAt: now,
         });
     // Anyone who unsubscribed since publishing gets nothing more.
     for (const o of this.outbox)
       if (o.status === 'pending' && this.unsubscribed.has(o.email)) o.status = 'skipped';
-    // Emails being sent right now, and failed ones claimed today (they may have gone out),
-    // count toward today's limit too.
+    // Emails being sent right now, and failed ones whose attempt ended in the last 24 hours (they
+    // may have gone out), count toward today's limit too.
     const day = 86_400_000;
     const sentToday = this.outbox.filter(
       (o) =>
         (o.sentAt !== null && now - o.sentAt < day) ||
         o.status === 'sending' ||
-        (o.status === 'failed' && now - o.claimedAt < day),
+        (o.status === 'failed' && now - (o.finishedAt ?? o.claimedAt) < day),
     ).length;
     const n = Math.max(0, Math.min(limit, dailyLimit - sentToday));
     const claimed = this.outbox.filter((o) => o.status === 'pending').slice(0, n);
@@ -315,6 +319,7 @@ export class MemoryDb implements Db {
     const o = this.outbox.find((x) => x.id === id);
     if (!o || o.status !== 'sending') return;
     o.error = error ? error.slice(0, 200) : null;
+    o.finishedAt = this.now().getTime();
     if (outcome === 'skipped') {
       o.status = 'skipped';
       return;
