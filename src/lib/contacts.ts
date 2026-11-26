@@ -2,6 +2,17 @@
    only when an organiser imports) or a CSV. Pure functions, so they are easy to test. */
 
 import type { ImportOutcome } from '../data/types';
+import { EMAIL_RE } from './validation';
+
+/** The address in a cell, lower-case: "Ada Lovelace <ADA@x.com>" and "mailto:ada@x.com" both give
+ *  "ada@x.com", and the display name, if any, comes back too. */
+function addressIn(value: string): { email: string; displayName: string } {
+  const v = value.trim();
+  const named = /^(.*?)\s*<([^<>\s]+)>$/.exec(v);
+  const raw = named ? named[2]! : v;
+  const displayName = named ? named[1]!.replace(/^"(.*)"$/, '$1').trim() : '';
+  return { email: raw.toLowerCase().replace(/^mailto:/, ''), displayName };
+}
 
 export interface Contact {
   name: string;
@@ -16,7 +27,6 @@ export interface ParsedList {
   duplicates: number;
 }
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const cell = (v: unknown): string => (v === null || v === undefined ? '' : String(v).trim());
 
 /** The email column from its heading. A plain address heading ("Email", "E-mail address") wins;
@@ -32,7 +42,7 @@ function findEmailHeading(head: string[], rows: string[][]): number {
   let best = candidates[0]?.i ?? -1;
   let bestHits = -1;
   for (const { i } of candidates) {
-    const hits = rows.filter((r) => EMAIL_RE.test((r[i] ?? '').toLowerCase())).length;
+    const hits = rows.filter((r) => EMAIL_RE.test(addressIn(r[i] ?? '').email)).length;
     if (hits > bestHits) [best, bestHits] = [i, hits];
   }
   // None of those columns holds an address, but the first row does: it is data, not headings
@@ -60,7 +70,7 @@ export function rowsToContacts(rows: unknown[][]): ParsedList {
     let best = -1;
     let bestHits = 0;
     for (let c = 0; c < width; c++) {
-      const hits = table.filter((r) => EMAIL_RE.test(r[c] ?? '')).length;
+      const hits = table.filter((r) => EMAIL_RE.test(addressIn(r[c] ?? '').email)).length;
       if (hits > bestHits) [best, bestHits] = [c, hits];
     }
     emailCol = best;
@@ -79,7 +89,7 @@ export function rowsToContacts(rows: unknown[][]): ParsedList {
   let invalid = 0;
   let duplicates = 0;
   for (const r of hasHeadings ? table.slice(1) : table) {
-    const email = (r[emailCol] ?? '').toLowerCase().replace(/^mailto:/, '');
+    const { email, displayName } = addressIn(r[emailCol] ?? '');
     if (!EMAIL_RE.test(email) || email.length > 254) {
       invalid++;
       continue;
@@ -94,6 +104,7 @@ export function rowsToContacts(rows: unknown[][]): ParsedList {
     else if (firstCol >= 0 || lastCol >= 0)
       name = [r[firstCol] ?? '', r[lastCol] ?? ''].filter(Boolean).join(' ');
     else if (!hasHeadings) name = guessName(r);
+    if (!name) name = displayName;
     contacts.push({ name: name.replace(/\s+/g, ' ').slice(0, 120), email });
   }
   return { contacts, invalid, duplicates };

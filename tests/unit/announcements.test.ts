@@ -132,9 +132,45 @@ describe('event cards', () => {
     expect(card('https://example.com/register')).toContain('href="https://example.com/register"');
     expect(card('javascript:alert(1)')).not.toContain('href=');
   });
+
+  it('gives the email a button only for a web address, so the preview never holds a javascript: link', () => {
+    const email = (linkUrl: string) =>
+      announcementEmail({
+        announcement: { ...ANN, endDate: undefined, theme: undefined, linkUrl },
+        name: 'Ada Obi',
+        email: 'ada@example.com',
+        siteUrl: 'https://jp.test',
+        unsubscribeUrl: 'https://jp.test/u',
+      });
+    const ok = email('https://example.com/register');
+    expect(ok.html).toContain('href="https://example.com/register"');
+    expect(ok.text).toContain('Register interest: https://example.com/register');
+    for (const bad of ['javascript:alert(1)', ' JavaScript:alert(1)', 'data:text/html,x']) {
+      const e = email(bad);
+      expect(e.html).not.toMatch(/javascript:|data:text/i);
+      expect(e.html).not.toContain('Register interest');
+      expect(e.text).not.toContain('Register interest');
+    }
+  });
 });
 
 describe('reading a spreadsheet', () => {
+  it('reads "Name <address>" cells as the bare address, so one mailbox is one contact', () => {
+    const out = rowsToContacts([
+      ['Email'],
+      ['Ada Lovelace <ADA@example.com>'],
+      ['ada@example.com'],
+      ['"Bola Ade" <bola@example.com>'],
+      ['Ada<ada@example.com'],
+    ]);
+    expect(out.contacts).toEqual([
+      { name: 'Ada Lovelace', email: 'ada@example.com' },
+      { name: 'Bola Ade', email: 'bola@example.com' },
+    ]);
+    expect(out.duplicates).toBe(1);
+    expect(out.invalid).toBe(1);
+  });
+
   it('uses the Name and Email headings, keeps each email once and counts bad rows', () => {
     const out = rowsToContacts([
       ['Full name', 'Phone', 'E-mail address'],
@@ -448,6 +484,21 @@ describe('importing people', () => {
     });
   });
 
+  it('takes bare addresses only, so a display-name form can never be a second recipient', async () => {
+    const { status, data } = await call('POST', '/api/admin/contacts/import', {
+      label: 'Forms',
+      people: [
+        { name: 'Ada', email: 'ada@example.com' },
+        { name: 'Ada', email: 'Ada<ada@example.com>' },
+        { name: 'Ada', email: '"Ada" <ada@example.com>' },
+        { name: 'Two', email: 'a@example.com, b@example.com' },
+      ],
+    });
+    expect(status).toBe(200);
+    expect(data).toMatchObject({ added: 1, invalid: 3 });
+    expect(db.contacts.map((c) => c.email)).toEqual(['ada@example.com']);
+  });
+
   it('needs a signed-in organiser and refuses an empty list', async () => {
     expect(
       (await call('POST', '/api/admin/contacts/import', { people: [] }, { cookie: '' })).status,
@@ -481,10 +532,16 @@ describe('publishing and sending', () => {
   });
 
   it.each([
-    ['booked', ['booked@example.com']],
+    ['booked', ['booked@example.com', 'bookedonly@example.com']],
     ['imported', ['booked@example.com', 'imp@example.com']],
-    ['all', ['booked@example.com', 'imp@example.com']],
+    ['all', ['booked@example.com', 'bookedonly@example.com', 'imp@example.com']],
   ])('sends to %s', async (audience, expected) => {
+    // Booked and asked for updates, but not in the sheet: "booked" and "all" reach them, and
+    // "imported" must not.
+    await book('bookedonly@example.com', true);
+    await Promise.all(deferred);
+    mailer.sent = [];
+    deferred = [];
     const id = await draft();
     const pub = await call('POST', `/api/admin/announcements/${id}/publish`, { audience });
     expect(pub.data.announcement).toMatchObject({
@@ -1222,6 +1279,27 @@ describe('review fixes', () => {
     expect(db.outbox[0]).toMatchObject({ status: 'sent', attempts: 1 });
     // Run 1 wakes up: its claim is gone, so it may not start sending.
     expect(await db.beginOutbox(stalled!.id, stalled!.claimToken)).toBe(false);
+  });
+
+  it('ignores a late report from an expired claim that no cleanup has reclaimed yet', async () => {
+    await fresh(['a@x.co']);
+    const [late] = await db.claimOutbox(1, 99);
+    // Two earlier attempts, then this claim stalls for 11 minutes before it ever sends.
+    Object.assign(db.outbox[0]!, { attempts: 2, claimedAt: db.outbox[0]!.claimedAt - 11 * 60_000 });
+    // Its preparation then fails: the report is ignored, and no attempt is spent.
+    await db.finishOutbox(late!.id, late!.claimToken, 'retry', 'lookup failed');
+    expect(db.outbox[0]).toMatchObject({ status: 'claimed', attempts: 2 });
+    // The next run gives the claim back and sends the email.
+    await processOutbox({ db, mailer, siteUrl: 'https://jp.test', limit: 10, dailyLimit: 99 });
+    expect(db.outbox[0]).toMatchObject({ status: 'sent', attempts: 3 });
+    // A current claim can still report a preparation error.
+    await fresh(['b@x.co']);
+    const [now] = await db.claimOutbox(1, 99);
+    await db.finishOutbox(now!.id, now!.claimToken, 'retry', 'lookup failed');
+    expect(db.outbox.find((o) => o.id === now!.id)).toMatchObject({
+      status: 'pending',
+      attempts: 1,
+    });
   });
 
   it('never lets a run whose claim expired change an email another run is sending', async () => {

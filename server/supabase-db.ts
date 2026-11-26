@@ -77,8 +77,8 @@ const toContribution = (r: Row): ContributionRecord => ({
 
 const optStr = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null);
 
-const toAnnouncement = (r: Row): AnnouncementRecord => ({
-  id: n(r.id),
+/** The event and email an organiser wrote: what a published announcement's snapshot holds. */
+const toAnnouncementFields = (r: Row): AnnouncementFields => ({
   title: s(r.title),
   date: s(r.date),
   endDate: optStr(r.end_date),
@@ -93,6 +93,11 @@ const toAnnouncement = (r: Row): AnnouncementRecord => ({
   linkLabel: optStr(r.link_label),
   subject: s(r.subject),
   message: s(r.message),
+});
+
+const toAnnouncement = (r: Row): AnnouncementRecord => ({
+  ...toAnnouncementFields(r),
+  id: n(r.id),
   status: r.status === 'published' ? 'published' : 'draft',
   publishedAt: opt(r.published_at),
   sentCount: n(r.sent_count),
@@ -103,9 +108,10 @@ const toAnnouncement = (r: Row): AnnouncementRecord => ({
       : null,
   recipients: n(r.recipients),
   createdAt: s(r.created_at),
+  // The email as published: only its content, decoded the same way as the live row's.
   emailContent:
     r.email_content && typeof r.email_content === 'object'
-      ? toAnnouncement(r.email_content as Row)
+      ? toAnnouncementFields(r.email_content as Row)
       : null,
 });
 

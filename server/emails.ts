@@ -36,6 +36,10 @@ interface Detail {
 }
 
 /** A button that survives Outlook: a padded link inside a coloured table cell. */
+/** A link the email may show as a button: web addresses only, never javascript: or data:. */
+const webLink = (v: string | null | undefined): string | undefined =>
+  v && /^https?:\/\//i.test(v.trim()) ? v.trim() : undefined;
+
 function button(label: string, href: string, kind: 'solid' | 'outline'): string {
   const solid = kind === 'solid';
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="display:inline-table;margin:0 8px 10px 0"><tr><td class="${solid ? 'btn-solid' : 'btn-outline'}" style="border-radius:12px;${solid ? fixed(C.indigo) : `background:${C.card}`};border:1.5px solid ${solid ? C.indigo : C.rule}"><a href="${esc(href)}" style="display:inline-block;padding:13px 22px;font:600 15px/1 ${SANS};color:${solid ? '#FFFFFF' : C.indigo};text-decoration:none;border-radius:12px">${label}</a></td></tr></table>`;
@@ -366,6 +370,7 @@ export function announcementEmail(input: AnnouncementInput): Email {
   const { announcement: a, name, email, siteUrl, unsubscribeUrl } = input;
   const site = siteUrl.replace(/\/+$/, '');
   const first = firstName(name);
+  const link = webLink(a.linkUrl);
   // Plain text gets the name as typed. The HTML gets it only after the message's formatting
   // (bold, links) has been turned into HTML, and escaped, so a name such as
   // "[Click](https://…)" can never become a link.
@@ -380,7 +385,7 @@ export function announcementEmail(input: AnnouncementInput): Email {
     `When:  ${when}`,
     `Where: ${venueLine(a)}`,
     ...(themeLine(a) ? [`Theme: ${themeLine(a)}`] : []),
-    ...(a.linkUrl ? ['', `${a.linkLabel || 'Learn more'}: ${a.linkUrl}`] : []),
+    ...(link ? ['', `${a.linkLabel || 'Learn more'}: ${link}`] : []),
     '',
     'Believers Tech Network',
     site,
@@ -391,7 +396,7 @@ export function announcementEmail(input: AnnouncementInput): Email {
     .map((p) => para(personalise(p, esc(first))))
     .join('\n')}
 ${eventCard(a)}
-${a.linkUrl ? `<div>${button(esc(a.linkLabel || 'Learn more'), a.linkUrl, 'solid')}</div>` : ''}`;
+${link ? `<div>${button(esc(a.linkLabel || 'Learn more'), link, 'solid')}</div>` : ''}`;
   return {
     to: email,
     subject: a.subject,

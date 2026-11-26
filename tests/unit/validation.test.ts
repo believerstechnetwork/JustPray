@@ -31,6 +31,14 @@ describe('isValidEmail', () => {
     expect(isValidEmail('you@example')).toBe(false);
     expect(isValidEmail('you example.com')).toBe(false);
   });
+
+  it('takes one bare address, never a display name or a list', () => {
+    expect(isValidEmail('first.last+tag@sub.example.co.uk')).toBe(true);
+    expect(isValidEmail('Ada<ada@example.com>')).toBe(false);
+    expect(isValidEmail('"Ada" <ada@example.com>')).toBe(false);
+    expect(isValidEmail('a@example.com,b@example.com')).toBe(false);
+    expect(isValidEmail('a@example.com;b@example.com')).toBe(false);
+  });
 });
 
 describe('validateRegistration', () => {

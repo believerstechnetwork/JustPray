@@ -221,6 +221,7 @@ create table if not exists public.announcement_sends (
 );
 alter table public.announcement_sends add column if not exists finished_at timestamptz;
 alter table public.announcement_sends add column if not exists claim_token text;
+alter table public.announcement_sends add column if not exists claimed_at timestamptz;
 alter table public.announcement_sends drop constraint if exists announcement_sends_status_check;
 alter table public.announcement_sends add constraint announcement_sends_status_check
   check (status in ('pending', 'claimed', 'sending', 'sent', 'failed', 'skipped'));
@@ -301,17 +302,20 @@ as $$
   select q.name, q.email, q.source from (
     select distinct on (p.email) p.name, p.email, p.source
     from (
-      select r.name, r.email, 'Booked a seat'::text as source, 0 as rank
+      select r.name, r.email, 'Booked a seat'::text as source, 0 as rank, r.created_at as at,
+             r.id as row_id
       from public.reservations r
       where r.updates and p_scope in ('all', 'booked')
       union all
-      select c.name, c.email, c.source, 1
+      select c.name, c.email, c.source, 1, c.created_at, c.id
       from public.contacts c
       where p_scope in ('all', 'imported')
     ) p
     where p.email > p_after
       and not exists (select 1 from public.unsubscribes u where u.email = p.email)
-    order by p.email, p.rank
+    -- A booking wins over an import; among several bookings, the newest one's name is used,
+    -- so the list and the emails always agree on it.
+    order by p.email, p.rank, p.at desc, p.row_id desc
   ) q
   order by q.email
   limit p_limit;
@@ -439,6 +443,9 @@ $$;
 drop function if exists public.finish_announcement_send(bigint, boolean, text);
 drop function if exists public.finish_announcement_send(bigint, boolean, text, boolean);
 drop function if exists public.finish_announcement_send(bigint, text, text);
+-- Record how a send ended, by the run holding its claim token. A claim that never started sending
+-- and is over 10 minutes old has expired: nothing is recorded, and cleanup returns it to the
+-- queue without spending an attempt (begin_announcement_send refuses it the same way).
 create or replace function public.finish_announcement_send(
   p_id bigint,
   p_token text,
@@ -456,7 +463,9 @@ begin
     update public.announcement_sends s
     set status = 'sent', sent_at = now(), finished_at = now(), attempts = s.attempts + 1,
         error = null
-    where s.id = p_id and s.status in ('claimed', 'sending') and s.claim_token = p_token
+    where s.id = p_id and s.claim_token = p_token
+      and (s.status = 'sending'
+           or (s.status = 'claimed' and s.claimed_at >= now() - interval '10 minutes'))
     returning s.announcement_id into ann;
     if ann is not null then
       update public.announcements a set sent_count = a.sent_count + 1 where a.id = ann;
@@ -464,24 +473,32 @@ begin
   elsif p_outcome = 'skipped' then
     update public.announcement_sends s
     set status = 'skipped', error = left(p_error, 200), finished_at = now()
-    where s.id = p_id and s.status in ('claimed', 'sending') and s.claim_token = p_token;
+    where s.id = p_id and s.claim_token = p_token
+      and (s.status = 'sending'
+           or (s.status = 'claimed' and s.claimed_at >= now() - interval '10 minutes'));
   elsif p_outcome = 'retry' then
     update public.announcement_sends s
     set attempts = s.attempts + 1,
         error = left(p_error, 200),
         finished_at = now(),
         status = case when s.attempts + 1 >= 3 then 'failed' else 'pending' end
-    where s.id = p_id and s.status in ('claimed', 'sending') and s.claim_token = p_token;
+    where s.id = p_id and s.claim_token = p_token
+      and (s.status = 'sending'
+           or (s.status = 'claimed' and s.claimed_at >= now() - interval '10 minutes'));
   elsif p_outcome = 'later' then
     -- The mail service's quota is used up: back in the queue, without using an attempt.
     update public.announcement_sends s
     set status = 'pending', error = left(p_error, 200), finished_at = now()
-    where s.id = p_id and s.status in ('claimed', 'sending') and s.claim_token = p_token;
+    where s.id = p_id and s.claim_token = p_token
+      and (s.status = 'sending'
+           or (s.status = 'claimed' and s.claimed_at >= now() - interval '10 minutes'));
   elsif p_outcome = 'failed' then
     update public.announcement_sends s
     set attempts = s.attempts + 1, error = left(p_error, 200), status = 'failed',
         finished_at = now()
-    where s.id = p_id and s.status in ('claimed', 'sending') and s.claim_token = p_token;
+    where s.id = p_id and s.claim_token = p_token
+      and (s.status = 'sending'
+           or (s.status = 'claimed' and s.claimed_at >= now() - interval '10 minutes'));
   else
     raise exception 'Unknown send outcome: %', p_outcome;
   end if;

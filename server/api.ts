@@ -1,7 +1,12 @@
 import { createHash, randomBytes, randomInt } from 'node:crypto';
 import { icsFile } from '../src/lib/calendar';
 import { parseTime, startsAt } from '../src/lib/format';
-import { fieldsOf, validateContribution, validateRegistration } from '../src/lib/validation';
+import {
+  EMAIL_RE,
+  fieldsOf,
+  validateContribution,
+  validateRegistration,
+} from '../src/lib/validation';
 import {
   clearedCookie,
   createSession,
@@ -57,7 +62,6 @@ const MAX_BODY = 10_000;
  *  JSON quoting and escapes to spare. */
 const MAX_IMPORT_BODY = 2_500_000;
 const MAX_IMPORT = 5000;
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const PRODUCTION_URL = 'https://justprayy.netlify.app';
 /** Announcement emails per 24 hours. Gmail allows about 500 a day in all; this leaves room for
  *  seat confirmations. Set ANNOUNCE_DAILY_LIMIT to change it (e.g. after moving to Resend). */

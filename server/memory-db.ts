@@ -214,11 +214,18 @@ export class MemoryDb implements Db {
     return [...this.contributions].reverse().map((c) => ({ ...c }));
   }
 
+  /** Emails closed without delivery, by announcement, counted in one pass over the outbox. */
+  private unsentCounts(): Map<number, number> {
+    const counts = new Map<number, number>();
+    for (const o of this.outbox)
+      if (o.status === 'failed' || o.status === 'skipped')
+        counts.set(o.announcementId, (counts.get(o.announcementId) ?? 0) + 1);
+    return counts;
+  }
+
   /** A copy of the announcement, with its count of emails closed without delivery. */
-  private view(a: AnnouncementRecord): AnnouncementRecord {
-    const unsentCount = this.outbox.filter(
-      (o) => o.announcementId === a.id && (o.status === 'failed' || o.status === 'skipped'),
-    ).length;
+  private view(a: AnnouncementRecord, counts = this.unsentCounts()): AnnouncementRecord {
+    const unsentCount = counts.get(a.id) ?? 0;
     // emailContent is copied too, so a caller can never change the stored snapshot.
     return {
       ...a,
@@ -228,7 +235,8 @@ export class MemoryDb implements Db {
   }
 
   async listAnnouncements(): Promise<AnnouncementRecord[]> {
-    return [...this.announcements].reverse().map((a) => this.view(a));
+    const counts = this.unsentCounts();
+    return [...this.announcements].reverse().map((a) => this.view(a, counts));
   }
 
   async createAnnouncement(fields: AnnouncementFields): Promise<AnnouncementRecord> {
@@ -404,6 +412,9 @@ export class MemoryDb implements Db {
     const o = this.outbox.find((x) => x.id === id);
     if (!o || (o.status !== 'claimed' && o.status !== 'sending') || o.claimToken !== claimToken)
       return;
+    // A claim that never started sending expires after 10 minutes, as in begin: nothing is
+    // recorded, and cleanup returns it to the queue without spending an attempt.
+    if (o.status === 'claimed' && this.now().getTime() - o.claimedAt > 10 * 60_000) return;
     o.error = error ? error.slice(0, 200) : null;
     o.finishedAt = this.now().getTime();
     if (outcome === 'skipped') {

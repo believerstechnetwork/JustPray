@@ -109,7 +109,7 @@ export function emailPreviewHtml(f: AnnouncementForm): string {
     email: 'ada@example.com',
     siteUrl: location.origin,
     unsubscribeUrl: '#',
-  }).html;
+  }).html.replace('<head>', '<head><base target="_blank">'); // links open in a new tab
 }
 
 /** The preview pane's content: the email in a frame, or the card as the site shows it. */
@@ -117,7 +117,9 @@ export function previewInner(): string {
   const a = S.ann;
   if (a.view === 'site')
     return `<div class="up-preview">${upcomingCard({ ...a.form, imageUrl: a.form.imageUrl })}</div>`;
-  return `<iframe class="mail" title="Email preview" srcdoc="${esc(emailPreviewHtml(a.form))}"></iframe>`;
+  // Sandboxed with no scripts, so nothing in the preview can run in the organiser page. The page
+  // may still read the frame (same origin) to size it, and links open in a new tab.
+  return `<iframe class="mail" title="Email preview" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" srcdoc="${esc(emailPreviewHtml(a.form))}"></iframe>`;
 }
 
 const PHOTOS: ReadonlyArray<[keyof typeof IMG, string]> = [
@@ -181,7 +183,9 @@ function peoplePanel(): string {
 
 function importPanel(): string {
   const im = S.ann.importing;
-  const back = `<p class="ann-back"><button class="link" type="button" data-action="ann-back">${ICON.back}Back to announcements</button></p>`;
+  // While an import is sending, the panel stays put: no going back, no other file.
+  const lock = im?.sending ? ' disabled' : '';
+  const back = `<p class="ann-back"><button class="link" type="button" data-action="ann-back"${lock}>${ICON.back}Back to announcements</button></p>`;
   if (!im)
     return `${back}<div class="block imp"><h2>Import from Excel</h2>
   <p>Choose an Excel (.xlsx) or CSV file with a column of email addresses, and names if you have them. The first row can be headings such as “Name” and “Email”.</p>
@@ -207,7 +211,7 @@ function importPanel(): string {
   ${im.contacts.length ? `<div class="tw"><table class="cards"><thead><tr><th>Name</th><th>Email</th></tr></thead><tbody>${sample}</tbody></table></div>${im.contacts.length > 6 ? `<p class="fine">and ${people(im.contacts.length - 6)} more.</p>` : ''}` : ''}
   <div class="field"><label for="imp-label">Label for this list</label><input id="imp-label" name="label" maxlength="80" value="${esc(im.label)}" placeholder="BTN Conference 2026 attendees"${saved ? ' readonly' : ''}><span class="hint">${saved ? 'Kept for the rest, so the whole list has one label.' : 'Shown in the mailing list as where these people came from.'}</span></div>
   ${S.ann.error ? `<p class="err" role="alert">${esc(S.ann.error)}</p>` : ''}
-  <div class="ann-actions"><button class="btn ind" type="submit"${S.busy || !im.contacts.length ? ' disabled' : ''}>${S.busy ? 'Importing…' : saved ? `Import the other ${people(im.contacts.length - saved)}` : `Import ${people(im.contacts.length)}`}</button><button class="link" type="button" data-action="ann-import">Choose another file</button></div></form>`;
+  <div class="ann-actions"><button class="btn ind" type="submit"${S.busy || !im.contacts.length ? ' disabled' : ''}>${S.busy ? 'Importing…' : saved ? `Import the other ${people(im.contacts.length - saved)}` : `Import ${people(im.contacts.length)}`}</button><button class="link" type="button" data-action="ann-import"${lock}>Choose another file</button></div></form>`;
 }
 
 function list(): string {

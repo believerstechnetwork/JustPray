@@ -79,9 +79,11 @@ import() { # people json, key ('' for none) -> added|existing|unsubscribed
 
 echo "Schema"
 fresh_db
-if git rev-parse -q --verify origin/main >/dev/null 2>&1 && git show origin/main:$SCHEMA >/tmp/jp-main-schema.$$ 2>/dev/null; then
-  schema /tmp/jp-main-schema.$$; check "the live (main) schema installs" "$?" 0
-  rm -f /tmp/jp-main-schema.$$
+main_schema=$(mktemp)
+trap 'rm -f "$main_schema"' EXIT
+if git rev-parse -q --verify origin/main >/dev/null 2>&1 \
+   && git show "origin/main:$SCHEMA" >"$main_schema" 2>/dev/null; then
+  schema "$main_schema"; check "the live (main) schema installs" "$?" 0
 fi
 schema $SCHEMA; check "installs (or upgrades the live one)" "$?" 0
 schema $SCHEMA; check "runs again with no change" "$?" 0
@@ -129,6 +131,50 @@ importer=$!
 sleep 0.5
 schema $SCHEMA; check "waits for it, then runs" "$?" 0
 wait $importer
+
+echo "Upgrading a send table from before claims"
+q -c "alter table announcement_sends drop column claimed_at" >/dev/null
+schema $SCHEMA; check "the rerun adds claimed_at back" "$?" 0
+q -v ON_ERROR_STOP=1 -c "select count(*) from claim_announcement_sends(1, 1000)" >/dev/null
+check "and claims work" "$?" 0
+settle
+
+echo "Finishing a claim that never started sending"
+q -c "insert into announcements (title, date, summary, subject, message)
+      values ('F', '2027-01-01', 's', 'sub', 'm')" >/dev/null
+fid=$(q -c "select max(id) from announcements")
+q -c "select from import_contacts('[{\"name\":\"F\",\"email\":\"f1@example.com\"},
+      {\"name\":\"G\",\"email\":\"f2@example.com\"}]'::jsonb, 'L')" >/dev/null
+q -c "select from publish_announcement($fid, 'imported')" >/dev/null
+read -r old_id old_token < <(q -F ' ' -c "select id, claim_token from claim_announcement_sends(1, 1000)" | head -1)
+q -c "update announcement_sends set claimed_at = now() - interval '11 minutes', attempts = 2
+      where id = $old_id"
+q -c "select finish_announcement_send($old_id, '$old_token', 'retry', 'prep failed')" >/dev/null
+check "an expired claim's late report changes nothing" \
+  "$(q -c "select status || ' ' || attempts from announcement_sends where id = $old_id")" "claimed 2"
+read -r new_id new_token < <(q -F ' ' -c "select id, claim_token from claim_announcement_sends(1, 1000)" | head -1)
+q -c "select finish_announcement_send($new_id, '$new_token', 'retry', 'prep failed')" >/dev/null
+check "a current claim can still report a preparation error" \
+  "$(q -c "select status || ' ' || attempts from announcement_sends where id = $new_id")" "pending 1"
+settle
+q -c "update announcement_sends set status = 'sent', claim_token = null where status <> 'sent'" >/dev/null
+
+echo "Audience names"
+q -c "insert into events (title, date, time, venue, capacity, is_current)
+      values ('Old', '2026-01-01', '16:00', 'Lagos', 10, false),
+             ('New', '2026-02-01', '16:00', 'Lagos', 10, false)" >/dev/null
+q -c "insert into reservations (event_id, seat, code, name, email, phone, updates, created_at)
+      select id, 1, 'A', case title when 'Old' then 'Ada Old' else 'Ada New' end,
+             'repeat@example.com', '0', true,
+             case title when 'Old' then now() - interval '30 days' else now() end
+      from events where title in ('Old', 'New')" >/dev/null
+q -c "insert into contacts (name, email, source) values ('Ada Sheet', 'repeat@example.com', 'S')" >/dev/null
+check "someone who booked twice is listed once, under their newest booking's name" \
+  "$(q -c "select name || ' / ' || source from updates_audience('all', '', 1000) where email = 'repeat@example.com'")" \
+  "Ada New / Booked a seat"
+check "the imported list uses the sheet's name" \
+  "$(q -c "select name from updates_audience('imported', '', 1000) where email = 'repeat@example.com'")" \
+  "Ada Sheet"
 
 echo "Import counts"
 J='[{"name":"A","email":"u1@example.com"},{"name":"B","email":"u2@example.com"},{"name":"C","email":"u3@example.com"}]'

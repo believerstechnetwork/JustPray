@@ -240,7 +240,8 @@ async function preferences(action?: 'unsubscribe' | 'resubscribe'): Promise<void
 let importReads = 0;
 async function readImportFile(input: HTMLInputElement): Promise<void> {
   const file = input.files?.[0];
-  if (!file) return;
+  // Never while an import is sending: its result and its saved progress belong to that file.
+  if (!file || S.ann.importing?.sending) return;
   // Only the latest file chosen, in the import panel that chose it, shows its result: an earlier
   // read that finishes late, or one whose panel was left, changes nothing (but still frees busy).
   const read = ++importReads;
@@ -258,6 +259,7 @@ async function readImportFile(input: HTMLInputElement): Promise<void> {
         ...parsed,
         label: file.name.replace(/\.(xlsx|csv)$/i, ''),
         progress: null,
+        sending: false,
         result: null,
       };
       if (!parsed.contacts.length)
@@ -277,13 +279,16 @@ async function readImportFile(input: HTMLInputElement): Promise<void> {
 
 async function submitImport(data: FormData): Promise<void> {
   const im = S.ann.importing;
-  if (!im || S.busy) return;
+  if (!im || S.busy || im.sending) return;
   // The label is fixed once part of the list is saved, so every batch carries the same one.
   if (!im.progress?.done) im.label = String(data.get('label') ?? '').trim();
   if (im.contacts.length > MAX_IMPORT_PEOPLE) {
     S.ann.error = `Import up to ${MAX_IMPORT_PEOPLE.toLocaleString('en-GB')} people at a time. Split the sheet and import each part.`;
     return render();
   }
+  // Marks this import as sending until it settles: no file can be read, no other submit can
+  // start, and the panel cannot be left or swapped meanwhile. Only this submit clears it.
+  im.sending = true;
   S.busy = true;
   S.ann.error = '';
   render();
@@ -317,6 +322,7 @@ async function submitImport(data: FormData): Promise<void> {
       S.ann.error = errorMessage(e);
     }
   }
+  im.sending = false;
   S.busy = false;
   render();
 }
@@ -585,6 +591,7 @@ async function annAction(action: string, el: HTMLElement): Promise<void> {
       freshForm = true;
       return render();
     case 'ann-back':
+      if (a.importing?.sending) return;
       annEditor++;
       a.confirming = false;
       a.editing = null;
@@ -612,6 +619,7 @@ async function annAction(action: string, el: HTMLElement): Promise<void> {
       }
       return render();
     case 'ann-import':
+      if (a.importing?.sending) return;
       a.panel = 'import';
       a.importing = null;
       a.error = '';

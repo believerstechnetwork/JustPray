@@ -348,6 +348,38 @@ test('organiser imports people from a CSV file and sees them on the mailing list
   await expect(row).toContainText(`Conference ${tag}`);
 });
 
+test('while an import is sending, the panel cannot be left, swapped or submitted again', async ({
+  page,
+}) => {
+  await signIn(page);
+  await page.getByRole('button', { name: 'Announcements', exact: true }).click();
+  await page.getByRole('button', { name: 'Import from Excel' }).click();
+  await page.locator('#imp-file').setInputFiles({
+    name: 'slow.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from('Name,Email\nSlow One,slow1@example.com\n'),
+  });
+  // The import request is held until the checks below are done.
+  let release: () => void = () => {};
+  const held = new Promise<void>((r) => (release = r));
+  let requests = 0;
+  await page.route('**/api/admin/contacts/import', async (route) => {
+    requests++;
+    await held;
+    await route.fulfill({ json: { added: 1, existing: 0, unsubscribed: 0, invalid: 0 } });
+  });
+  await page.getByRole('button', { name: 'Import 1 person' }).click();
+  await expect(page.getByRole('button', { name: 'Importing…' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Back to announcements' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Choose another file' })).toBeDisabled();
+  // Pressing Enter in the label field does not send it again.
+  await page.getByLabel('Label for this list').press('Enter');
+  release();
+  await expect(page.getByRole('heading', { name: 'Import complete' })).toBeVisible();
+  expect(requests).toBe(1);
+  await page.unroute('**/api/admin/contacts/import');
+});
+
 test('an import that stops part way keeps what it saved, and Import again sends the rest', async ({
   page,
 }) => {
@@ -440,6 +472,12 @@ test('organiser previews, tests and publishes an announcement that then shows on
     page.frameLocator('iframe.mail').getByRole('heading', { name: title }),
   ).toBeVisible();
   await expect(page.frameLocator('iframe.mail').getByText('Hi Ada,')).toBeVisible();
+  // The preview is sandboxed: nothing in it can run script in the organiser page.
+  const sandbox = await page.locator('iframe.mail').getAttribute('sandbox');
+  expect(sandbox).not.toBeNull();
+  expect(sandbox).not.toContain('allow-scripts');
+  // It is still sized to its content: the page can read the frame and sets its height.
+  await expect(page.locator('iframe.mail')).toHaveAttribute('style', /height: \d+px/);
 
   await page.getByRole('button', { name: 'Send test' }).click();
   await expect(page.getByText(/Test sent to organisers@example.com/)).toBeVisible();

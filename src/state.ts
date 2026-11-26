@@ -92,6 +92,8 @@ export interface UiState {
       label: string;
       /** Set once a batch is saved: what is saved so far, so a retry sends only the rest. */
       progress: ImportProgress | null;
+      /** A submit of this list is under way; nothing else may read a file or submit meanwhile. */
+      sending: boolean;
       result: ImportOutcome | null;
     } | null;
     /** 'new', an announcement id, or null for the list. */
