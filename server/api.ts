@@ -323,6 +323,9 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
         });
       }
       const emailQueued = sendConfirmation(outcome, name, email, event, eventId, cancelToken);
+      // With email off, record the confirmation as not sent, so that once email is set up a
+      // repeat booking attempt sends it (with a fresh cancel link), as for a failed send.
+      if (!emailQueued) await db().markEmailFailed(outcome.id, hashToken(cancelToken));
       return json(201, {
         status: 'created',
         reservation: { seat: outcome.seat, code: outcome.code, name, email, phone, cancelToken },

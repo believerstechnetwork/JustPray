@@ -135,6 +135,18 @@ describe('public API', () => {
     expect(data.emailQueued).toBe(false);
   });
 
+  it('sends the confirmation of a booking made while email was off, once email is set up', async () => {
+    deps.mailer = null;
+    await call('POST', '/api/reserve', person('a@b.co'));
+    deps.mailer = mailer;
+    const again = await call('POST', '/api/reserve', person('a@b.co'));
+    expect(again.data.emailQueued).toBe(true);
+    await Promise.all(deferred);
+    expect(mailer.sent).toHaveLength(1);
+    expect(mailer.sent[0]?.text).toMatch(/#\/cancel\/[A-Za-z0-9_-]{32}/);
+    expect(db.reservations[0]?.emailSentAt).not.toBeNull();
+  });
+
   it('reports a full gathering', async () => {
     await call('POST', '/api/reserve', person('a@b.co'));
     await call('POST', '/api/reserve', person('c@d.co'));
