@@ -20,7 +20,7 @@ export function register(): string {
   const name = a?.name ?? S.draft.name;
   const email = a?.email ?? S.draft.email;
   const panel = closed
-    ? `<div class="panel"><h2>Reservations open soon.</h2><p>The next gathering hasn't been announced yet. Please check back soon.</p></div>`
+    ? `<div class="panel"><h2>Reservations open soon.</h2><p>The next gathering hasn’t been announced yet. Please check back soon.</p></div>`
     : full
       ? `<div class="panel"><h2>This gathering is full.</h2><p>All ${capacity()} seats are reserved. Please check back for next month's gathering.</p></div>`
       : `<form class="panel" data-form="register" novalidate><h2>Your details</h2><p>Fields marked * are required.</p>
@@ -33,10 +33,10 @@ export function register(): string {
   <div class="hp" aria-hidden="true"><label for="hp-w">Website</label><input id="hp-w" name="website" tabindex="-1" autocomplete="off"></div>
   <button class="btn gold wide" type="submit" style="margin-top:24px"${S.busy ? ' disabled' : ''}>${S.busy ? 'Reserving…' : `Reserve my seat ${ICON.arrow}`}</button>
   <p class="fine">We use your details only to run Just Pray gatherings and never share or sell them. Email us to have them deleted.</p></form>`;
-  return `<section class="cloth fade head">${pattern(14, 4, 3, 0.08)}${nav()}<div class="head-body"><div><h1>Reserve your seat.</h1><p class="lede">Free, with no ticket to buy. We'll send the details by email and WhatsApp.</p></div>
+  return `<section class="cloth fade head">${pattern(14, 4, 3, 0.08)}${nav()}<div class="head-body"><div><h1>Reserve your seat.</h1><p class="lede">Free, with no ticket to buy. We’ll send the details by email and WhatsApp.</p></div>
  <div class="frame"><img src="${IMG.head1}" alt="" style="object-position:50% 24%"></div></div></section>
 <div class="wrap"><section class="split"><div class="intro"><h2>Next gathering</h2>
   <dl class="kv"><div><dt>Date</dt><dd>${when(() => (e ? longDate(e.date) : 'To be announced'))}</dd></div><div><dt>Time</dt><dd>${when(() => esc(e?.time ?? ''))}</dd></div><div><dt>Venue</dt><dd>${when(() => esc(e?.venue ?? ''))}</dd></div><div><dt>Seats left</dt><dd>${when(() => `${seatsLeft()} of ${capacity()}`)}</dd></div></dl>
-  <p>After you reserve, you'll see your pass with your seat number and code.</p></div>
+  <p>After you reserve, you’ll see your pass with your seat number and code.</p></div>
 ${panel}</section></div><div class="page-end"></div>${footer()}`;
 }

@@ -21,8 +21,7 @@ function accounts(): string {
   });
   if (!list.length) return '';
   // Its own section (not the intro column, which phones hide) so every visitor sees it.
-  return `<section class="acct-sec" aria-labelledby="acct-h"><h2 id="acct-h">Our accounts</h2><div class="accts">${list.join('')}</div>
-  <p class="fine">Use the form above to get your own reference, then put it in the transfer description so we can match your gift.</p></section>`;
+  return `<section class="acct-sec" aria-labelledby="acct-h"><h2 id="acct-h">Our accounts</h2><div class="accts">${list.join('')}</div></section>`;
 }
 
 function panel(): string {
@@ -33,12 +32,12 @@ function panel(): string {
     return `<div>${h}<p>Transfer <b>${money(S.amount, S.currency)}</b> to our ${S.currency === 'USD' ? 'dollar' : 'naira'} account below. Put the reference in the transfer description so we can match it.</p>
    <dl class="kv" style="margin-top:0">${copyRow('Amount', String(S.amount))}${copyRow('Bank', S.bank.bankName)}${copyRow('Account number', S.bank.accountNumber, ' code')}${copyRow('Account name', S.bank.accountName)}${S.bank.swiftCode ? copyRow('SWIFT code', S.bank.swiftCode, ' code') : ''}${copyRow('Reference', S.reference, ' code', true)}</dl>
    ${err}
-   <button class="btn ind wide" data-action="sent" type="button" style="margin-top:24px"${S.busy ? ' disabled' : ''}>${S.busy ? 'Saving…' : "I've sent it"}</button>
+   <button class="btn ind wide" data-action="sent" type="button" style="margin-top:24px"${S.busy ? ' disabled' : ''}>${S.busy ? 'Saving…' : 'I’ve sent it'}</button>
    <button class="link" data-action="reset" type="button" style="margin-top:8px">Change amount</button></div>`;
 
   if (S.step === 'sent')
-    return `<div role="status"><h3>Thank you, ${esc(S.giverName.split(' ')[0] ?? '')}.</h3><p>We'll confirm your contribution of <b>${money(S.amount, S.currency)}</b> once it shows in our account. Your reference is <b class="code">${esc(S.reference)}</b>.</p>
-   <p class="fine">If you haven't sent it yet, you can still transfer to the same account with the same reference.</p>
+    return `<div role="status"><h3>Thank you, ${esc(S.giverName.split(' ')[0] ?? '')}.</h3><p>We’ll confirm your contribution of <b>${money(S.amount, S.currency)}</b> once it shows in our account. Your reference is <b class="code">${esc(S.reference)}</b>.</p>
+   <p class="fine">If you haven’t sent it yet, you can still transfer to the same account with the same reference.</p>
    <button class="btn ghost wide" data-action="reset" type="button" style="margin-top:18px">Make another contribution</button></div>`;
 
   const offered = (['NGN', 'USD'] as const).filter((c) => S.banks[c]);
@@ -71,5 +70,5 @@ export function support(): string {
   return `<section class="cloth fade head">${pattern(14, 4, 5, 0.08)}${nav()}<div class="head-body"><div><h1>Help cover the cost of the room.</h1><p class="lede">Every gathering is free. Giving is optional and does not affect your seat. It covers the venue, equipment and hospitality.</p></div>
  <div class="frame"><img src="${IMG.t3}" alt="" style="object-position:60% 50%"></div></div></section>
 <div class="wrap"><section class="split"><div class="intro"><h2>How it works</h2><p>Pick an amount (at least ${min}), send a bank transfer with the reference we give you, and an organiser confirms it against our bank statement.</p></div><div class="panel">${panel()}</div></section>
-${accounts()}</div>${footer()}`;
+${S.step === 'details' ? '' : accounts()}</div>${footer()}`;
 }

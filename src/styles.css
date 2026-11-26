@@ -1116,6 +1116,9 @@ html[data-mode='dark'] .amounts.cur button[aria-pressed='true'] {
   margin-top: 2px;
   overflow-wrap: anywhere;
 }
+.pass dl .wide {
+  grid-column: 1 / -1;
+}
 .pass dd.code {
   font: 400 24px var(--display);
   color: #0e2766;
@@ -1722,6 +1725,8 @@ html[data-mode='dark'] .share .x {
   .footer nav {
     margin-left: 0;
     width: 100%;
+    gap: 18px;
+    font-size: 15px;
   }
   .head {
     padding-bottom: 60px;

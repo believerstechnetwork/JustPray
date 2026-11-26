@@ -31,6 +31,10 @@ const shortMoney = (n: number, cur: Currency = 'NGN'): string => {
       : money(n, cur);
 };
 
+/** The exact amount under a shortened figure; nothing when the figure is already exact. */
+const exact = (n: number, cur: Currency): string =>
+  shortMoney(n, cur) === money(n, cur) ? '' : `<small>${money(n, cur)}</small>`;
+
 /** "₦245k + $120", leaving out a currency with nothing in it. */
 const both = (t: Record<Currency, number>, short = true): string => {
   const f = short ? shortMoney : money;
@@ -52,7 +56,7 @@ function overview(d: AdminData): string {
       'Bank details are not set up, so the Support page cannot take contributions.',
   ].filter(Boolean);
   return `${warnings.map((w) => `<div class="notice" role="note">${w}</div>`).join('')}
-  <div class="nums"><div><span>Seats reserved</span><strong>${d.reserved}<small> / ${cap}</small></strong><div class="bar"><i style="width:${cap ? Math.min(100, (d.reserved / cap) * 100) : 0}%"></i></div></div><div><span>Seats left</span><strong>${Math.max(0, cap - d.reserved)}</strong></div><div><span>Contributions confirmed</span><strong>${both(d.totals.confirmed)}</strong><small>${d.totals.supporters} supporter${d.totals.supporters === 1 ? '' : 's'}${d.totals.pendingCount ? ` · ${both(d.totals.pending, false)} awaiting check` : ''}</small></div></div>
+  <div class="nums"><div><span>Seats</span><strong>${d.reserved}<small> of ${cap}</small></strong><div class="bar"><i style="width:${cap ? Math.min(100, (d.reserved / cap) * 100) : 0}%"></i></div><small>${Math.max(0, cap - d.reserved)} left</small></div><div><span>Contributions confirmed</span><strong>${both(d.totals.confirmed)}</strong><small>${d.totals.supporters} supporter${d.totals.supporters === 1 ? '' : 's'}${d.totals.pendingCount ? ` · ${both(d.totals.pending, false)} awaiting check` : ''}</small></div></div>
   ${
     d.event
       ? `<div class="block"><div class="block-h"><h2>${esc(d.event.title)}</h2><button class="btn small ghost" data-tab="events" type="button">Edit event</button></div>
@@ -97,7 +101,7 @@ function contributions(d: AdminData): string {
         `<tr><td class="code" data-label="Reference">${esc(c.reference)}</td><td data-label="From"><b>${esc(c.name)}</b><br><small>${esc(c.email)} · ${when(c.createdAt)}</small></td><td data-label="Amount">${money(c.amount, c.currency)}</td><td data-label="Status">${statusTag(c)}</td><td class="acts">${actions(c)}</td></tr>`,
     )
     .join('');
-  return `<div class="nums"><div><span>Confirmed naira</span><strong>${shortMoney(t.confirmed.NGN, 'NGN')}</strong><small>${money(t.confirmed.NGN, 'NGN')}</small></div><div><span>Confirmed dollars</span><strong>${shortMoney(t.confirmed.USD, 'USD')}</strong><small>${money(t.confirmed.USD, 'USD')}</small></div><div><span>Awaiting check</span><strong>${t.pendingCount}</strong><small>${both(t.pending, false)} · ${t.supporters} supporter${t.supporters === 1 ? '' : 's'} confirmed</small></div></div>
+  return `<div class="nums"><div><span>Confirmed naira</span><strong>${shortMoney(t.confirmed.NGN, 'NGN')}</strong>${exact(t.confirmed.NGN, 'NGN')}</div><div><span>Confirmed dollars</span><strong>${shortMoney(t.confirmed.USD, 'USD')}</strong>${exact(t.confirmed.USD, 'USD')}</div><div><span>Awaiting check</span><strong>${t.pendingCount}</strong><small>${both(t.pending, false)} · ${t.supporters} supporter${t.supporters === 1 ? '' : 's'} confirmed</small></div></div>
   <div class="block"><div class="block-h"><h2>Ledger</h2><small>Newest first</small></div>
   ${d.contributions.length ? `<div class="tw"><table class="cards"><thead><tr><th>Reference</th><th>From</th><th>Amount</th><th>Status</th><th><span class="sr">Actions</span></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="empty"><h3>No contributions yet</h3><p>Gifts appear here once someone shows the bank details; confirm each one against your statement.</p><button class="btn small ghost" data-route="support" type="button">Open the Support page</button></div>'}</div>
   <p class="fine">Match each transfer in the bank statement by its reference and amount, then press Confirm. Only confirmed contributions count toward the totals, and naira and dollars are totalled separately. "Check bank" means the giver pressed "I've sent it"; "Not marked sent" means they saw the details but did not confirm sending.</p>`;
@@ -145,5 +149,5 @@ export function admin(): string {
   <nav aria-label="Organiser" style="display:contents">${TABS.map(([k, n]) => `<button class="t" type="button" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ''}>${TAB_ICONS[k]}${n}</button>`).join('')}</nav><span class="gap"></span>
   <button class="t" type="button" data-route="home">${ICON.back}Back to public site</button>
   <button class="t" type="button" data-action="logout">${ICON.out}Sign out</button></aside>
-  <main class="main"><p class="ev">${esc(d?.event?.title ?? 'Just Pray')}</p><h1>${title}</h1>${body}</main></section>`;
+  <main class="main"><h1>${title}</h1>${body}</main></section>`;
 }

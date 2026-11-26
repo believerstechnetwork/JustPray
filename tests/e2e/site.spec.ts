@@ -63,9 +63,9 @@ test('reserving a seat shows the pass and updates the seat count', async ({ page
   await page.getByRole('button', { name: 'Reserve my seat' }).click();
 
   await expect(page).toHaveURL(/#\/confirmed$/);
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText("You're in, Ada.");
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('You’re in, Ada.');
   await expect(page.getByText(/^JP-\d{4}$/)).toBeVisible();
-  await expect(page.getByText(`We've emailed your confirmation to ${email}`)).toBeVisible();
+  await expect(page.getByText(`We’ve emailed your confirmation to ${email}`)).toBeVisible();
   // The seat lights live on the home page; the new booking is counted there.
   await page.getByRole('button', { name: 'Back to home' }).click();
   expect(await seatCount(page)).toBeGreaterThan(before);
@@ -136,7 +136,7 @@ test('support flow: amount validation, bank details with a reference, then thank
   await expect(page.locator('.panel').getByText('0000000000')).toBeVisible();
   const reference = (await page.locator('.panel .copyval.code').last().textContent()) ?? '';
   expect(reference).toMatch(/^JP-[A-Z0-9]{5}$/);
-  await page.getByRole('button', { name: "I've sent it" }).click();
+  await page.getByRole('button', { name: 'I’ve sent it' }).click();
   await expect(page.getByRole('heading', { name: 'Thank you, Ada.' })).toBeVisible();
   await expect(page.getByText(reference)).toBeVisible();
 });
@@ -205,18 +205,17 @@ test('organiser confirms a contribution and the total updates', async ({ page })
   await page.getByLabel('Email').fill(uniqueEmail());
   await page.getByRole('button', { name: 'Show bank details' }).click();
   const reference = (await page.locator('.panel .copyval.code').last().textContent()) ?? '';
-  await page.getByRole('button', { name: "I've sent it" }).click();
+  await page.getByRole('button', { name: 'I’ve sent it' }).click();
   await expect(page.getByText('Thank you')).toBeVisible();
 
   await signIn(page);
   await page.getByRole('button', { name: 'Contributions', exact: true }).click();
   // The exact confirmed naira total, from the line under the short figure ("₦245,000").
   const confirmedNaira = async (): Promise<number> => {
-    const text = await page
-      .locator('.nums > div')
-      .filter({ hasText: 'Confirmed naira' })
-      .locator('small')
-      .textContent();
+    const tile = page.locator('.nums > div').filter({ hasText: 'Confirmed naira' });
+    // The exact amount is the line under a shortened figure, or the figure itself.
+    const exact = tile.locator('small');
+    const text = await ((await exact.count()) ? exact : tile.locator('strong')).textContent();
     return Number((text ?? '').replace(/[^\d.]/g, ''));
   };
   const before = await confirmedNaira();
