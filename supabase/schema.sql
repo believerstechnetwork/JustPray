@@ -565,12 +565,14 @@ begin
   on conflict (email) do nothing;
   get diagnostics n_added = row_count;
   -- With a key, everyone this import added counts as added, including people saved by an earlier
-  -- try of this batch whose reply was lost. Counted after the insert, which waits for such a try
-  -- still in progress, so this new statement sees its rows.
+  -- try of this batch whose reply was lost, even if they have unsubscribed since (they are still
+  -- never emailed, and the insert above never adds anyone unsubscribed). Counted after the
+  -- insert, which waits for such a try still in progress, so this new statement sees its rows.
   if p_import is not null then
-    select count(*) into n_added
-    from import_in i join public.contacts c on c.email = i.email
-    where not i.blocked and c.import_key = p_import;
+    select count(*) filter (where c.import_key = p_import),
+           count(*) filter (where i.blocked and c.import_key is distinct from p_import)
+    into n_added, blocked
+    from import_in i left join public.contacts c on c.email = i.email;
   end if;
   return query select n_added, total - n_added - blocked, blocked;
 end;

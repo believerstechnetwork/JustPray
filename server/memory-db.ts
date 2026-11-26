@@ -479,12 +479,12 @@ export class MemoryDb implements Db {
     for (const p of people) {
       if (seen.has(p.email)) continue;
       seen.add(p.email);
-      if (this.unsubscribed.has(p.email)) result.unsubscribed++;
-      else if (onList.has(p.email)) {
-        // Added by this same import already (a batch sent again after its reply was lost).
-        if (importKey && this.importKeys.get(p.email) === importKey) result.added++;
-        else result.existing++;
-      } else {
+      // Added by this same import already (a batch sent again after its reply was lost): still
+      // added, even if they have unsubscribed since (they are never emailed either way).
+      if (importKey && this.importKeys.get(p.email) === importKey) result.added++;
+      else if (this.unsubscribed.has(p.email)) result.unsubscribed++;
+      else if (onList.has(p.email)) result.existing++;
+      else {
         this.contacts.push({ name: p.name, email: p.email, source: label });
         if (importKey) this.importKeys.set(p.email, importKey);
         onList.add(p.email);
