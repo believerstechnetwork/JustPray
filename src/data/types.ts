@@ -23,10 +23,87 @@ export interface BankDetails {
 /** One account per currency; null when that account is not set up. */
 export type Banks = Record<Currency, BankDetails | null>;
 
+/** Another BTN event, as listed on the site. */
+export interface UpcomingEvent {
+  id: number;
+  title: string;
+  date: string;
+  endDate: string | null;
+  time: string | null;
+  theme: string | null;
+  themeTba: boolean;
+  venue: string;
+  venueTba: boolean;
+  summary: string;
+  imageUrl: string | null;
+  linkUrl: string | null;
+  linkLabel: string | null;
+}
+
+/** An announcement as the organisers edit it. */
+export interface Announcement extends Omit<UpcomingEvent, 'id'> {
+  id: number;
+  subject: string;
+  message: string;
+  status: 'draft' | 'published';
+  publishedAt: string | null;
+  /** Emails the mail service accepted (inbox delivery is not confirmed). */
+  sentCount: number;
+  /** Emails closed without a confirmed delivery: failed (some may still have arrived, such as
+   *  after a timeout), or skipped because the person unsubscribed. */
+  unsentCount: number;
+  recipients: number;
+  audience: AudienceScope | null;
+  createdAt: string;
+}
+
+/** Who an announcement goes to: people who booked (and asked for updates), imported, or both. */
+export type AudienceScope = 'all' | 'booked' | 'imported';
+
+export interface AudienceMember {
+  name: string;
+  email: string;
+  /** "Booked a seat", or the label of the import they came from. */
+  source: string;
+}
+
+export interface AnnouncementsInfo {
+  announcements: Announcement[];
+  audience: number;
+  counts: Record<AudienceScope, number>;
+  /** Default address for "Send a test to me". */
+  testTo: string;
+  dailyLimit: number;
+  /** Which email service is on, or null when email is off. */
+  email: string | null;
+}
+
+export interface ImportOutcome {
+  added: number;
+  existing: number;
+  unsubscribed: number;
+  invalid: number;
+}
+
+export type AnnouncementForm = Omit<
+  Announcement,
+  | 'id'
+  | 'status'
+  | 'publishedAt'
+  | 'sentCount'
+  | 'unsentCount'
+  | 'recipients'
+  | 'audience'
+  | 'createdAt'
+>;
+
 export interface PublicInfo {
   event: GatheringEvent | null;
   reserved: number;
   banks: Banks;
+  /** Other BTN events coming up, soonest first. */
+  /** null when the list could not be read this time (the page keeps the one it has). */
+  upcoming: UpcomingEvent[] | null;
 }
 
 /** A reservation made during this visit. */

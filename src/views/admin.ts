@@ -1,6 +1,7 @@
 import type { AdminData, Contribution, Currency } from '../data/types';
 import { displayTime, esc, longDate, money, parseTime } from '../lib/format';
 import { pattern } from '../lib/cloth';
+import { announcementsTab } from './announcements';
 import { ICON } from './common';
 import { S, type AdminTab } from '../state';
 
@@ -9,6 +10,7 @@ const TABS: ReadonlyArray<[AdminTab, string]> = [
   ['attendees', 'Attendees'],
   ['contributions', 'Contributions'],
   ['events', 'Event'],
+  ['announcements', 'Announcements'],
 ];
 
 const when = (iso: string | null): string =>
@@ -138,6 +140,7 @@ const TAB_ICONS: Record<AdminTab, string> = {
   attendees: ICON.users,
   contributions: ICON.gift,
   events: ICON.cal,
+  announcements: ICON.megaphone,
 };
 
 export function admin(): string {
@@ -148,7 +151,8 @@ export function admin(): string {
       ? `<p class="err" role="alert">${esc(S.adminError)}</p>`
       : '';
   const body = d
-    ? notice + { overview, attendees, contributions, events }[S.tab](d)
+    ? notice +
+      { overview, attendees, contributions, events, announcements: announcementsTab }[S.tab](d)
     : S.adminError
       ? `<p class="err" role="alert">${esc(S.adminError)}</p><button class="btn small ghost" data-action="admin-reload" type="button">Try again</button>`
       : '<div role="status"><div class="spin"></div><p style="text-align:center">Loading…</p></div>';

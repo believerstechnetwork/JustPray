@@ -1,4 +1,10 @@
+import { randomBytes } from 'node:crypto';
 import type {
+  OutboxOutcome,
+  AnnouncementFields,
+  AnnouncementRecord,
+  AudienceMember,
+  AudienceScope,
   CancelLookup,
   ContributionRecord,
   ContributionStatus,
@@ -10,6 +16,7 @@ import type {
   ReserveOutcome,
   UpdateEventOutcome,
 } from './types';
+import { orderUpcoming } from './upcoming';
 
 /** In-memory storage with the same rules as `supabase/schema.sql`.
  *  Used by unit tests, local development and the end-to-end tests. */
@@ -29,6 +36,31 @@ export class MemoryDb implements Db {
   event: EventDetails | null;
   reservations: StoredReservation[] = [];
   contributions: ContributionRecord[] = [];
+  announcements: AnnouncementRecord[] = [];
+  /** Emails that unsubscribed from announcements. */
+  unsubscribed = new Set<string>();
+  /** People added from an Excel import. */
+  contacts: AudienceMember[] = [];
+  /** Each import batch's result, by import key and batch (see importContacts). */
+  private importBatches = new Map<
+    string,
+    { added: number; existing: number; unsubscribed: number }
+  >();
+  outbox: {
+    id: number;
+    announcementId: number;
+    name: string;
+    email: string;
+    unsubToken: string;
+    status: 'pending' | 'claimed' | 'sending' | 'sent' | 'failed' | 'skipped';
+    claimToken: string | null;
+    attempts: number;
+    claimedAt: number;
+    sentAt: number | null;
+    /** When the last attempt ended. */
+    finishedAt: number | null;
+    error: string | null;
+  }[] = [];
   private nextId = 1;
   private readonly now: () => Date;
 
@@ -180,6 +212,302 @@ export class MemoryDb implements Db {
 
   async listContributions(): Promise<ContributionRecord[]> {
     return [...this.contributions].reverse().map((c) => ({ ...c }));
+  }
+
+  /** Emails closed without delivery, by announcement, counted in one pass over the outbox. */
+  private unsentCounts(): Map<number, number> {
+    const counts = new Map<number, number>();
+    for (const o of this.outbox)
+      if (o.status === 'failed' || o.status === 'skipped')
+        counts.set(o.announcementId, (counts.get(o.announcementId) ?? 0) + 1);
+    return counts;
+  }
+
+  /** A copy of the announcement, with its count of emails closed without delivery. */
+  private view(a: AnnouncementRecord, counts = this.unsentCounts()): AnnouncementRecord {
+    const unsentCount = counts.get(a.id) ?? 0;
+    // emailContent is copied too, so a caller can never change the stored snapshot.
+    return {
+      ...a,
+      emailContent: a.emailContent ? { ...a.emailContent } : a.emailContent,
+      unsentCount,
+    };
+  }
+
+  async listAnnouncements(): Promise<AnnouncementRecord[]> {
+    const counts = this.unsentCounts();
+    return [...this.announcements].reverse().map((a) => this.view(a, counts));
+  }
+
+  async createAnnouncement(fields: AnnouncementFields): Promise<AnnouncementRecord> {
+    const a: AnnouncementRecord = {
+      ...fields,
+      id: this.nextId++,
+      status: 'draft',
+      publishedAt: null,
+      sentCount: 0,
+      unsentCount: 0,
+      audience: null,
+      recipients: 0,
+      createdAt: this.now().toISOString(),
+    };
+    this.announcements.push(a);
+    return this.view(a);
+  }
+
+  async updateAnnouncement(
+    id: number,
+    fields: AnnouncementFields,
+  ): Promise<AnnouncementRecord | null> {
+    const a = this.announcements.find((x) => x.id === id);
+    if (!a) return null;
+    // Only the editable fields, as the database update does: status, counts and the email
+    // snapshot never come from the caller.
+    Object.assign(a, {
+      title: fields.title,
+      date: fields.date,
+      endDate: fields.endDate,
+      time: fields.time,
+      theme: fields.theme,
+      themeTba: fields.themeTba,
+      venue: fields.venue,
+      venueTba: fields.venueTba,
+      summary: fields.summary,
+      imageUrl: fields.imageUrl,
+      linkUrl: fields.linkUrl,
+      linkLabel: fields.linkLabel,
+      subject: fields.subject,
+      message: fields.message,
+    });
+    return this.view(a);
+  }
+
+  async deleteDraftAnnouncement(id: number): Promise<boolean> {
+    const i = this.announcements.findIndex((x) => x.id === id && x.status === 'draft');
+    if (i < 0) return false;
+    this.announcements.splice(i, 1);
+    return true;
+  }
+
+  async announcementById(id: number): Promise<AnnouncementRecord | null> {
+    const a = this.announcements.find((x) => x.id === id);
+    return a ? this.view(a) : null;
+  }
+
+  async publishAnnouncement(id: number, scope: AudienceScope): Promise<AnnouncementRecord | null> {
+    const a = this.announcements.find((x) => x.id === id);
+    if (!a || a.status !== 'draft') return null;
+    // Like the database's single transaction: everything that can fail (the audience, the
+    // tokens, the clock) is worked out first, then stored in one step with no await in between.
+    // Nothing reads a half-published announcement, a failure leaves no emails queued for a
+    // draft, and a second publish finds it already published and queues nothing.
+    const people = this.audienceNow(scope);
+    const snapshot: AnnouncementRecord = { ...a, emailContent: null };
+    const publishedAt = this.now().toISOString();
+    const tokens = people.map(() => randomBytes(24).toString('base64url'));
+    const firstId = this.nextId;
+    const rows = people.map((p, i) => ({
+      id: firstId + i,
+      announcementId: id,
+      name: p.name,
+      email: p.email,
+      unsubToken: tokens[i] ?? '',
+      status: 'pending' as const,
+      attempts: 0,
+      claimedAt: 0,
+      sentAt: null,
+      finishedAt: null,
+      error: null,
+      claimToken: null,
+    }));
+    this.nextId += rows.length;
+    this.outbox.push(...rows);
+    Object.assign(a, {
+      status: 'published',
+      emailContent: snapshot,
+      publishedAt,
+      recipients: people.length,
+      audience: scope,
+    });
+    return this.view(a);
+  }
+
+  async claimOutbox(limit: number, dailyLimit: number) {
+    const now = this.now().getTime();
+    // A claim older than 10 minutes that never started sending: nothing went out, so it goes back
+    // in the queue (its old token stops working).
+    for (const o of this.outbox)
+      if (o.status === 'claimed' && now - o.claimedAt > 10 * 60_000)
+        Object.assign(o, { status: 'pending', claimToken: null });
+    // A send that started more than 10 minutes ago belongs to a run that died, maybe after
+    // sending: close it as failed rather than risk sending twice.
+    for (const o of this.outbox)
+      if (o.status === 'sending' && now - o.claimedAt > 10 * 60_000)
+        Object.assign(o, {
+          status: 'failed',
+          attempts: o.attempts + 1,
+          error: 'Sending did not finish',
+          finishedAt: now,
+        });
+    // Anyone who unsubscribed since publishing gets nothing more.
+    for (const o of this.outbox)
+      if (o.status === 'pending' && this.unsubscribed.has(o.email)) o.status = 'skipped';
+    // Emails being sent right now, and failed ones whose attempt ended in the last 24 hours (they
+    // may have gone out), count toward today's limit too.
+    const day = 86_400_000;
+    const sentToday = this.outbox.filter(
+      (o) =>
+        (o.sentAt !== null && now - o.sentAt < day) ||
+        o.status === 'claimed' ||
+        o.status === 'sending' ||
+        (o.status === 'failed' && now - (o.finishedAt ?? o.claimedAt) < day),
+    ).length;
+    const n = Math.max(0, Math.min(limit, dailyLimit - sentToday));
+    // Fresh emails first; ones being retried wait behind them.
+    const claimed = this.outbox
+      .filter((o) => o.status === 'pending' && !this.unsubscribed.has(o.email))
+      .sort((x, y) => x.attempts - y.attempts || x.id - y.id)
+      .slice(0, n);
+    for (const o of claimed)
+      Object.assign(o, {
+        status: 'claimed',
+        claimedAt: now,
+        claimToken: randomBytes(12).toString('hex'),
+      });
+    return claimed.map((o) => ({
+      id: o.id,
+      announcementId: o.announcementId,
+      name: o.name,
+      email: o.email,
+      unsubToken: o.unsubToken,
+      claimToken: o.claimToken ?? '',
+    }));
+  }
+
+  async beginOutbox(id: number, claimToken: string): Promise<boolean> {
+    const o = this.outbox.find((x) => x.id === id);
+    const now = this.now().getTime();
+    // An expired claim (older than 10 minutes) is refused even before a run has reclaimed it.
+    if (
+      !o ||
+      o.status !== 'claimed' ||
+      o.claimToken !== claimToken ||
+      now - o.claimedAt > 10 * 60_000
+    )
+      return false;
+    Object.assign(o, { status: 'sending', claimedAt: now });
+    return true;
+  }
+
+  async isUnsubscribed(email: string): Promise<boolean> {
+    return this.unsubscribed.has(email);
+  }
+
+  async finishOutbox(
+    id: number,
+    claimToken: string,
+    outcome: OutboxOutcome,
+    error?: string,
+  ): Promise<void> {
+    const o = this.outbox.find((x) => x.id === id);
+    if (!o || (o.status !== 'claimed' && o.status !== 'sending') || o.claimToken !== claimToken)
+      return;
+    // A claim that never started sending expires after 10 minutes, as in begin: nothing is
+    // recorded, and cleanup returns it to the queue without spending an attempt.
+    if (o.status === 'claimed' && this.now().getTime() - o.claimedAt > 10 * 60_000) return;
+    o.error = error ? error.slice(0, 200) : null;
+    o.finishedAt = this.now().getTime();
+    if (outcome === 'skipped') {
+      o.status = 'skipped';
+      return;
+    }
+    if (outcome === 'later') {
+      o.status = 'pending';
+      return;
+    }
+    o.attempts++;
+    if (outcome === 'sent') {
+      Object.assign(o, { status: 'sent', sentAt: this.now().getTime(), error: null });
+      const a = this.announcements.find((x) => x.id === o.announcementId);
+      if (a) a.sentCount++;
+    } else if (outcome === 'retry') o.status = o.attempts >= 3 ? 'failed' : 'pending';
+    else o.status = 'failed';
+  }
+
+  async resubscribe(token: string): Promise<string | null> {
+    const o = this.outbox.find((x) => x.unsubToken === token);
+    if (!o) return null;
+    this.unsubscribed.delete(o.email);
+    return o.email;
+  }
+
+  async subscriptionByToken(token: string): Promise<{ email: string; subscribed: boolean } | null> {
+    const o = this.outbox.find((x) => x.unsubToken === token);
+    return o ? { email: o.email, subscribed: !this.unsubscribed.has(o.email) } : null;
+  }
+
+  async unsubscribe(token: string): Promise<string | null> {
+    const o = this.outbox.find((x) => x.unsubToken === token);
+    if (!o) return null;
+    this.unsubscribed.add(o.email);
+    for (const x of this.outbox)
+      if (x.email === o.email && x.status === 'pending') x.status = 'skipped';
+    return o.email;
+  }
+
+  async upcomingAnnouncements(todayIso: string, limit: number): Promise<AnnouncementRecord[]> {
+    return orderUpcoming(
+      this.announcements.filter(
+        (a) => a.status === 'published' && (a.endDate ?? a.date) >= todayIso,
+      ),
+      todayIso,
+      limit,
+    ).map((a) => this.view(a));
+  }
+
+  async updatesAudience(scope: AudienceScope = 'all'): Promise<AudienceMember[]> {
+    return this.audienceNow(scope);
+  }
+
+  private audienceNow(scope: AudienceScope): AudienceMember[] {
+    const seen = new Map<string, AudienceMember>();
+    if (scope !== 'imported')
+      for (const r of this.reservations)
+        if (r.updates) seen.set(r.email, { name: r.name, email: r.email, source: 'Booked a seat' });
+    if (scope !== 'booked')
+      for (const c of this.contacts) if (!seen.has(c.email)) seen.set(c.email, { ...c });
+    return [...seen.values()].filter((p) => !this.unsubscribed.has(p.email));
+  }
+
+  async importContacts(
+    people: { name: string; email: string }[],
+    label: string,
+    importKey: string | null = null,
+  ): Promise<{ added: number; existing: number; unsubscribed: number }> {
+    // Imported membership does not depend on bookings: someone who booked is still added, so an
+    // announcement sent to imported people only reaches everyone in the sheet.
+    // A batch already done under this key (sent again after its reply was lost) gets back the
+    // result it had the first time, whatever has changed since.
+    const batchId = importKey ? `${importKey}\n${JSON.stringify(people)}` : null;
+    const stored = batchId ? this.importBatches.get(batchId) : undefined;
+    if (stored) return { ...stored };
+    const onList = new Set(this.contacts.map((c) => c.email));
+    const result = { added: 0, existing: 0, unsubscribed: 0 };
+    // Each address counts once, as in the database (which drops repeats before counting).
+    const seen = new Set<string>();
+    for (const p of people) {
+      if (seen.has(p.email)) continue;
+      seen.add(p.email);
+      if (this.unsubscribed.has(p.email)) result.unsubscribed++;
+      else if (onList.has(p.email)) result.existing++;
+      else {
+        this.contacts.push({ name: p.name, email: p.email, source: label });
+        onList.add(p.email);
+        result.added++;
+      }
+    }
+    if (batchId) this.importBatches.set(batchId, { ...result });
+    return result;
   }
 
   async ping(): Promise<void> {}

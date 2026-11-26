@@ -11,6 +11,11 @@ TypeScript) and a Supabase Postgres database. Confirmation emails go out through
 1. **Database.** In Supabase, open SQL Editor, paste `supabase/schema.sql` and run it. It is safe to
    run again; it only creates what is missing. When an update changes `schema.sql`, run it again
    before merging that update: the changes are written so the live site keeps working meanwhile.
+   Best run when no announcement is sending (none shows "Sending" in the admin Announcements list)
+   and nobody is publishing. The update locks the sender's tables first, so a send that starts
+   meanwhile just waits for it. If an email is being sent at that moment, or the tables are busy,
+   the update stops without changing anything and asks you to wait two minutes and run it again;
+   do the same if Supabase reports a deadlock. Nothing is ever sent twice.
 2. **Settings.** In Netlify, open Site configuration, then Environment variables, and add the
    variables listed in `.env.example`. Mark the keys and passwords as secret.
 3. **Deploy.** Push to `main`. The site, the API (`/api/*`) and a daily keep-alive job (so Supabase's
@@ -34,6 +39,22 @@ still work but no email is sent (the organiser view shows a warning).
   stored. Cancelling frees the seat at once, sends a short note, and keeps the person on the organiser
   list as Cancelled. Booking again with the same email gives back the same seat while seats remain.
   Cancelling closes an hour after the gathering starts.
+- **Announcements** (`/#/admin` → Announcements): other BTN events, such as a conference. Fill in
+  the event (theme and venue can be "to be announced"), pick a picture, write the email, and see
+  it as it will arrive. "Send test" emails it to you first. Publishing asks who to send to
+  (people who booked and asked for updates, people imported from Excel, or both), then lists the
+  event on the home page until it ends.
+- **Mailing list:** import people from an Excel or CSV file (a column of emails, names optional);
+  the site shows what it found before anything is saved. Every announcement has a one-click
+  unsubscribe link, and anyone who unsubscribes is never emailed one again or added back.
+- **Sending:** announcement emails wait in an outbox. A first batch goes out on publishing, then
+  `send-announcements` sends the next batch every two minutes, up to `ANNOUNCE_DAILY_LIMIT`
+  (default 350) a day; a large list finishes the next day. Scheduled functions run on the live
+  site only, so a preview deploy sends just the first batch. The 350 leaves headroom under
+  Gmail's daily limit (about 500), but booking confirmations and anything else the account sends
+  count toward Gmail's limit too, so lower it if the account is busy. Each
+  person gets an email at most once: a send the mail service refused is retried (3 attempts in
+  all), but one that may have gone out (a timeout, a server error, or a run that stopped mid-send) is not. If the mail service's own quota is used up, the rest wait in the queue for the next runs without using their attempts. Each email is sent as it was when published; editing a published event changes the home page only.
 - **Support:** the giver picks naira or dollars, an amount, and enters their name and email. They get the
   account for that currency and a unique reference (for example `JP-7K3QX`) to put in the transfer
   description. "I've sent it" marks it as ready to check.
@@ -59,11 +80,14 @@ npm run dev
 | `npm run check`        | Everything CI runs, except end-to-end tests                       |
 | `npm test`             | Unit tests (Vitest)                                               |
 | `npm run test:e2e`     | End-to-end tests (Playwright, desktop and mobile Chromium)        |
+| `npm run test:db`      | Runs `schema.sql` on a real PostgreSQL and checks its rules       |
 | `npm run lint`         | ESLint                                                            |
 | `npm run format`       | Prettier (use `format:check` to verify)                           |
 | `npm run check:assets` | Fails if an image in `src/assets` is over the size budget (1.2MB) |
 
-For end-to-end tests, install the browser once with `npx playwright install chromium`.
+For end-to-end tests, install the browser once with `npx playwright install chromium`. The
+database tests need PostgreSQL (16 or later) and `psql`; they create and drop a scratch database
+using the usual `PGHOST`, `PGUSER` and `PGPASSWORD` settings, so never point them at Supabase.
 
 ## Local development
 
@@ -88,16 +112,19 @@ server/
   api.ts           every /api route, independent of Netlify so it is easy to test
   supabase-db.ts   storage on Supabase; memory-db.ts is the same rules in memory
   mailer.ts        Gmail (SMTP app password) or Resend
-  emails.ts        the email templates (confirmation, cancellation)
+  emails.ts        the email templates (confirmation, cancellation, announcement)
+  outbox.ts        sends queued announcement emails in batches, within the daily limit
   auth.ts          signed organiser session cookie
 netlify/functions/
   api.mts          serves /api/*
+  send-announcements.mts  every two minutes, sends the next batch of announcement emails
   keepalive.mts    daily query so the free database is not paused
 supabase/
   schema.sql       tables, access rules and the reserve_seat function
 tests/
   unit/            Vitest (API, storage mapping, validation, formatting)
   e2e/             Playwright, against the in-memory backend
+  db/              schema.sql on a real PostgreSQL (npm run test:db)
 ```
 
 ## Continuous integration
@@ -110,6 +137,7 @@ tests/
 | Unit tests              | Vitest                                                  |
 | Build                   | Image size budget, production build (uploads `dist`)    |
 | End-to-end (Playwright) | Desktop and mobile flows; uploads the report on failure |
+| Database (PostgreSQL)   | `schema.sql` on PostgreSQL 16: reruns, sends, imports   |
 | **CI passed**           | Gate job that is green only when all of the above are   |
 
 New pushes to a PR cancel its older runs. To require CI before merging, add a branch protection rule

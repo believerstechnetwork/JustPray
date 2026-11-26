@@ -1,15 +1,21 @@
-/* Just Pray: Adire + gold.
-   Indigo resist cloth made from the BTN logo's dots and lines; gold is the light of a lit seat.
-   Gold means one thing only: a seat, the action that lights it, and "Free". */
+/* Just Pray: Adire + ivory.
+   Indigo resist cloth made from the BTN logo's dots and lines; warm ivory is the light of a lit
+   seat, like cream paper against ink. On the cloth the main action is ivory; on light pages it is
+   indigo with ivory text. Ivory is never used for words on a light background. */
 
 :root {
   --indigo: #0e2766;
   --indigo-2: #16378c;
   --blue: #0a6fc2;
-  --gold: #f5b841;
-  --gold-ink: #3a2600;
-  --gold-t: #fff4d6;
-  --gold-line: #ebcb7e;
+  --ivory: #efe4cf;
+  --ivory-2: #f8f1e3;
+  --ivory-ink: #0e2766;
+  --ivory-t: #f7f0e2;
+  --ivory-line: #e2d3b4;
+  /* The main action on light surfaces: indigo with ivory text (ivory on dark in dark mode). */
+  --cta: var(--indigo);
+  --cta-hover: var(--indigo-2);
+  --cta-ink: #f3ead9;
 
   --canvas: #f4f8fd;
   --card: #ffffff;
@@ -44,8 +50,11 @@ html[data-mode='dark'] {
   --mute-t: #17284f;
   --blue: #7ab9f5;
   --cloth: #12307a;
-  --gold-t: #3a2c0c;
-  --gold-line: #7a5e1c;
+  --ivory-t: #2b2820;
+  --ivory-line: #5e5440;
+  --cta: var(--ivory);
+  --cta-hover: var(--ivory-2);
+  --cta-ink: var(--indigo);
   --shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 24px 48px -24px rgb(0 0 0 / 60%);
   --ok: #5fd39c;
   --warn: #f5c25a;
@@ -101,8 +110,8 @@ button {
   border: 0;
 }
 ::selection {
-  background: var(--gold);
-  color: var(--gold-ink);
+  background: #e6d7b8;
+  color: #0d1a3a;
 }
 :root {
   --focus: #0a6fc2;
@@ -111,7 +120,7 @@ html[data-mode='dark'] {
   --focus: #7ab9f5;
 }
 .cloth {
-  --focus: var(--gold);
+  --focus: var(--ivory);
 }
 /* White surfaces that sit on the cloth go back to the light-surface ring. */
 .slip,
@@ -144,8 +153,8 @@ table {
   left: 16px;
   top: -60px;
   z-index: 50;
-  background: var(--gold);
-  color: var(--gold-ink);
+  background: var(--ivory);
+  color: var(--ivory-ink);
   padding: 10px 16px;
   border-radius: 10px;
   font-weight: 600;
@@ -188,9 +197,23 @@ table {
   width: 100%;
   height: 100%;
 }
+/* The pattern fades out behind the headline and paragraph, so the words sit on calm indigo. */
 .fade > .pat {
-  -webkit-mask-image: linear-gradient(90deg, rgb(0 0 0 / 22%), rgb(0 0 0 / 35%) 42%, #000 85%);
-  mask-image: linear-gradient(90deg, rgb(0 0 0 / 22%), rgb(0 0 0 / 35%) 42%, #000 85%);
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent,
+    transparent 46%,
+    rgb(0 0 0 / 55%) 62%,
+    #000 90%
+  );
+  mask-image: linear-gradient(90deg, transparent, transparent 46%, rgb(0 0 0 / 55%) 62%, #000 90%);
+}
+@media (max-width: 760px) {
+  /* On phones the words span the width, so the pattern only shows faintly at the far edge. */
+  .fade > .pat {
+    -webkit-mask-image: linear-gradient(90deg, transparent 35%, rgb(0 0 0 / 30%));
+    mask-image: linear-gradient(90deg, transparent 35%, rgb(0 0 0 / 30%));
+  }
 }
 
 /* ---------- buttons and links ---------- */
@@ -220,13 +243,37 @@ table {
   width: 20px;
   height: 20px;
 }
-.btn.gold {
-  background: var(--gold);
-  color: var(--gold-ink);
-  box-shadow: 0 10px 24px -12px rgb(245 184 65 / 80%);
+.btn.primary {
+  background: var(--cta);
+  color: var(--cta-ink);
+  box-shadow: 0 10px 24px -14px rgb(14 39 102 / 55%);
 }
-.btn.gold:hover {
-  background: #f7c35e;
+.btn.primary:hover {
+  background: var(--cta-hover);
+}
+/* On the indigo cloth the main action turns ivory... */
+.cloth .btn.primary {
+  background: var(--ivory);
+  color: var(--ivory-ink);
+  box-shadow: 0 10px 24px -14px rgb(0 0 0 / 50%);
+}
+.cloth .btn.primary:hover {
+  background: var(--ivory-2);
+}
+/* ...except on the light cards that sit on it. */
+.slip .btn.primary,
+.panel .btn.primary,
+.acct .btn.primary,
+.share .btn.primary {
+  background: var(--cta);
+  color: var(--cta-ink);
+  box-shadow: 0 10px 24px -14px rgb(14 39 102 / 55%);
+}
+.slip .btn.primary:hover,
+.panel .btn.primary:hover,
+.acct .btn.primary:hover,
+.share .btn.primary:hover {
+  background: var(--cta-hover);
 }
 .btn.ind {
   background: var(--indigo);
@@ -272,7 +319,12 @@ html[data-mode='dark'] .btn.ind {
   align-items: center;
 }
 .link:hover {
-  text-decoration-color: var(--gold);
+  text-decoration-thickness: 2px;
+}
+.link[disabled] {
+  opacity: 0.6;
+  cursor: progress;
+  text-decoration-thickness: 1px;
 }
 .actions {
   display: flex;
@@ -283,7 +335,7 @@ html[data-mode='dark'] .btn.ind {
 
 /* ---------- banner, nav ---------- */
 .demo {
-  background: var(--gold-t);
+  background: var(--ivory-t);
   color: var(--ink);
   text-align: center;
   padding: 10px 16px;
@@ -331,7 +383,7 @@ html[data-mode='dark'] .btn.ind {
 }
 .nav-links [aria-current='page'] {
   text-decoration: underline;
-  text-decoration-color: var(--gold);
+  text-decoration-color: var(--ivory);
   text-decoration-thickness: 2px;
   text-underline-offset: 9px;
 }
@@ -340,11 +392,28 @@ html[data-mode='dark'] .btn.ind {
 }
 .menu-btn {
   display: none;
+  align-items: center;
+  gap: 8px;
   margin-left: auto;
   font-weight: 600;
   min-height: 44px;
-  padding: 0 4px;
+  padding: 0 16px 0 12px;
+  border-radius: 999px;
   color: #fff;
+  background: rgb(255 255 255 / 8%);
+  box-shadow: inset 0 0 0 1.5px rgb(239 228 207 / 45%);
+}
+.menu-btn svg {
+  width: 20px;
+  height: 20px;
+  color: var(--ivory);
+}
+.menu-btn[aria-expanded='true'] {
+  background: var(--ivory);
+  color: var(--ivory-ink);
+}
+.menu-btn[aria-expanded='true'] svg {
+  color: var(--ivory-ink);
 }
 .mobile-nav {
   display: none;
@@ -371,6 +440,11 @@ html[data-mode='dark'] .btn.ind {
   height: 100%;
   object-fit: cover;
   border-radius: 14px;
+}
+/* A light, even grade so stage lighting in the photos sits calmly with the indigo and ivory. */
+.frame img,
+.pframe img {
+  filter: saturate(0.82) contrast(1.02);
 }
 .tag {
   position: absolute;
@@ -433,7 +507,7 @@ html[data-mode='dark'] .btn.ind {
 .hero h1 em,
 .done h1 em {
   font-style: normal;
-  color: var(--gold);
+  color: var(--ivory);
 }
 .lede {
   font-size: 20px;
@@ -443,6 +517,9 @@ html[data-mode='dark'] .btn.ind {
 }
 .hero .link {
   margin-top: 26px;
+  font-weight: 700;
+  text-decoration-thickness: 2px;
+  text-decoration-color: var(--ivory);
 }
 .hero-photo {
   position: relative;
@@ -530,8 +607,8 @@ html[data-mode='dark'] .btn.ind {
 .notice {
   border-radius: 14px;
   padding: 14px 18px;
-  background: var(--gold-t);
-  box-shadow: inset 0 0 0 1.5px var(--gold-line);
+  background: var(--ivory-t);
+  box-shadow: inset 0 0 0 1.5px var(--ivory-line);
   font-size: 15px;
   font-weight: 600;
   margin: 0 0 18px;
@@ -552,7 +629,7 @@ html[data-mode='dark'] .btn.ind {
   accent-color: var(--indigo);
 }
 html[data-mode='dark'] .check input {
-  accent-color: var(--gold);
+  accent-color: var(--ivory);
 }
 .fine {
   font-size: 14px;
@@ -647,13 +724,13 @@ html[data-mode='dark'] .date-big .day {
   box-shadow: inset 0 0 0 1.5px rgb(255 255 255 / 50%);
 }
 .wall .n.lit {
-  background: var(--gold);
-  box-shadow: 0 0 12px rgb(245 184 65 / 45%);
+  background: var(--ivory);
+  box-shadow: 0 0 12px rgb(239 228 207 / 45%);
   animation: light 0.42s var(--ease) both;
   animation-delay: calc(var(--i, 0) * 14ms);
 }
 .wall .n.mine {
-  outline: 2px solid var(--gold);
+  outline: 2px solid var(--ivory);
   outline-offset: 4px;
 }
 @keyframes light {
@@ -726,8 +803,8 @@ h2.big {
   height: 52px;
   padding: 8px;
   border-radius: 14px;
-  border: 1.5px dashed rgb(245 184 65 / 70%);
-  color: var(--gold);
+  border: 1.5px dashed rgb(239 228 207 / 70%);
+  color: var(--ivory);
 }
 .how b {
   display: block;
@@ -784,7 +861,7 @@ h2.big {
   display: block;
   font: 400 16px var(--body);
   font-style: normal;
-  color: var(--gold);
+  color: var(--ivory);
   margin-top: 24px;
 }
 .close {
@@ -918,8 +995,8 @@ h2.big {
   box-shadow: none;
 }
 html[data-mode='dark'] .amounts button[aria-pressed='true'] {
-  background: var(--gold);
-  color: var(--gold-ink);
+  background: var(--ivory);
+  color: var(--ivory-ink);
 }
 .amounts.cur {
   grid-template-columns: 1fr 1fr;
@@ -973,8 +1050,8 @@ html[data-mode='dark'] .amounts.cur button[aria-pressed='true'] {
   background: rgb(10 111 194 / 16%);
 }
 .kv dd.ref {
-  background: var(--gold-t);
-  box-shadow: inset 0 0 0 1.5px var(--gold-line);
+  background: var(--ivory-t);
+  box-shadow: inset 0 0 0 1.5px var(--ivory-line);
   border-radius: 12px;
   padding-left: 12px;
   padding-right: 12px;
@@ -1071,8 +1148,8 @@ html[data-mode='dark'] .amounts.cur button[aria-pressed='true'] {
   position: absolute;
   right: 20px;
   bottom: 18px;
-  background: var(--gold);
-  color: var(--gold-ink);
+  background: var(--ivory);
+  color: var(--ivory-ink);
   border-radius: 12px;
   padding: 10px 16px 8px;
   text-align: center;
@@ -1166,7 +1243,7 @@ html[data-mode='dark'] .amounts.cur button[aria-pressed='true'] {
 }
 .spin.on-cloth {
   border-color: rgb(255 255 255 / 20%);
-  border-top-color: var(--gold);
+  border-top-color: var(--ivory);
 }
 /* A cancelled seat: the pass stays, quietly greyed, so people can see which seat it was. */
 .pass.void .top {
@@ -1226,7 +1303,7 @@ html[data-mode='dark'] .amounts.cur button[aria-pressed='true'] {
   font: 600 12px var(--body);
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--gold);
+  color: var(--ivory);
   padding: 0 10px 20px;
 }
 .side .t {
@@ -1246,7 +1323,7 @@ html[data-mode='dark'] .amounts.cur button[aria-pressed='true'] {
 .side .t[aria-current='page'] {
   background: rgb(255 255 255 / 10%);
   color: #fff;
-  box-shadow: inset 0 0 0 1.5px rgb(245 184 65 / 55%);
+  box-shadow: inset 0 0 0 1.5px rgb(239 228 207 / 55%);
 }
 .side .gap {
   flex: 1;
@@ -1304,7 +1381,7 @@ html[data-mode='dark'] .amounts.cur button[aria-pressed='true'] {
 .bar i {
   display: block;
   height: 100%;
-  background: var(--gold);
+  background: var(--blue);
   border-radius: 4px;
 }
 .block {
@@ -1356,9 +1433,11 @@ html[data-mode='dark'] .amounts.cur button[aria-pressed='true'] {
 html[data-mode='dark'] .chart i {
   background: #3c66c8;
 }
-.chart .max i,
+.chart .max i {
+  background: var(--blue);
+}
 html[data-mode='dark'] .chart .max i {
-  background: var(--gold);
+  background: var(--ivory);
 }
 .axis {
   display: grid;
@@ -1508,6 +1587,605 @@ td.acts .btn + .btn {
   max-width: 440px;
 }
 
+/* ---------- other BTN events: home-page list ---------- */
+/* Sits between the next gathering (120px below it) and the burden (40px above it). */
+.upcoming {
+  padding: 0 0 80px;
+  scroll-margin-top: 24px;
+}
+.upcoming .sec-h {
+  font-size: clamp(32px, 3.4vw, 44px);
+  text-wrap: balance;
+}
+/* Focused by the header's Events link: keyboard users see the ring, mouse users do not. */
+.upcoming .sec-h:focus:not(:focus-visible) {
+  outline: none;
+}
+.upcoming .sec-h:focus-visible {
+  outline-offset: 6px;
+  border-radius: 6px;
+}
+.up-h p {
+  color: var(--ink-2);
+  margin-top: 10px;
+  font-size: 18px;
+}
+.up-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+  gap: 28px;
+  margin-top: 40px;
+}
+.up-card {
+  background: var(--card);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+.up-list.one .up-card {
+  grid-template-columns: minmax(280px, 5fr) 7fr;
+  grid-template-rows: none;
+}
+
+/* The left (or top) face: a picture, or the date drawn large on the cloth. */
+.up-face {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  display: grid;
+  place-items: center;
+  margin: 0;
+}
+.up-list.one .up-face {
+  aspect-ratio: auto;
+  min-height: 300px;
+}
+/* A soft pool of shade behind the date, so the numerals sit clear of the motifs. */
+.up-face.cloth::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: radial-gradient(closest-side, rgb(10 25 70 / 85%), rgb(10 25 70 / 0%));
+  pointer-events: none;
+}
+.up-face.cloth .up-date {
+  z-index: 1;
+}
+.up-img {
+  background: var(--mute-t);
+}
+.up-img img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.up-date {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+.up-date .m {
+  font: 700 14px var(--body);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ivory);
+}
+.up-date .d {
+  font: 400 clamp(76px, 8vw, 112px) / 0.9 var(--display);
+  letter-spacing: -0.04em;
+  color: #fff;
+  margin: 10px 0 8px;
+  white-space: nowrap;
+}
+.up-date .y {
+  font: 500 16px var(--body);
+  letter-spacing: 0.08em;
+  color: var(--on-2);
+}
+.up-face.cloth .up-date::after {
+  content: '';
+  width: 36px;
+  height: 2px;
+  margin-top: 18px;
+  border-radius: 2px;
+  background: var(--ivory);
+  order: 3;
+}
+/* On a picture the date becomes a small white tag in the corner. */
+.up-img .up-date {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  padding: 10px 14px 9px;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgb(8 17 40 / 22%);
+}
+/* The tag stays white in dark mode too, so its text keeps the light-theme colours. */
+.up-img .up-date .m {
+  color: #0a6fc2;
+  font-size: 12px;
+}
+.up-img .up-date .d {
+  font-size: 34px;
+  color: #0d1a3a;
+  margin: 2px 0 0;
+}
+.up-img .up-date .y {
+  display: none;
+}
+
+.up-body {
+  padding: 28px 28px 30px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+.up-list.one .up-body {
+  padding: 44px 48px;
+  justify-content: center;
+}
+.up-when {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: 600 14px var(--body);
+  color: var(--blue);
+}
+.up-when svg {
+  width: 18px;
+  height: 18px;
+}
+.up-card h3 {
+  font-size: 30px;
+  line-height: 1.08;
+  text-wrap: balance;
+}
+.up-list.one .up-card h3 {
+  font-size: clamp(32px, 3.4vw, 44px);
+}
+.up-card p {
+  color: var(--ink-2);
+}
+.up-card .up-sum {
+  max-width: 52ch;
+}
+.up-card .up-theme {
+  font: 400 19px/1.35 var(--display);
+  color: var(--ink);
+}
+.up-card .up-theme.tba {
+  font: 600 13px var(--body);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.up-where {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 15px;
+}
+.up-where svg {
+  color: var(--ink-2);
+  flex: none;
+}
+.up-card .btn {
+  margin-top: 12px;
+}
+
+/* ---------- the celebration burst ---------- */
+.burst {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 80;
+  overflow: hidden;
+}
+.burst i {
+  position: absolute;
+  border-radius: 50%;
+  will-change: transform, opacity;
+}
+
+/* ---------- organiser: announcements ---------- */
+.field textarea {
+  width: 100%;
+  border-radius: 12px;
+  border: 1.5px solid var(--field);
+  background: var(--card);
+  color: var(--ink);
+  padding: 12px 16px;
+  font: 400 16px/1.55 var(--body);
+  resize: vertical;
+}
+.field textarea:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 4px rgb(10 111 194 / 18%);
+}
+.field .opt {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+}
+.flabel {
+  display: block;
+  font: 600 13px var(--body);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  margin-bottom: 7px;
+}
+.ann-row {
+  display: grid;
+  grid-template-columns: 72px 1fr auto auto;
+  gap: 18px;
+  align-items: center;
+  padding: 14px 0;
+  border-top: 1px solid var(--rule);
+}
+.ann-row img,
+.ann-ph {
+  width: 72px;
+  height: 52px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: var(--mute-t);
+}
+.ann-t b {
+  display: block;
+  font-weight: 600;
+}
+.ann-t small,
+.ann-s small {
+  color: var(--ink-2);
+  font-size: 14px;
+}
+.ann-s {
+  display: grid;
+  justify-items: end;
+}
+.ann-back {
+  margin: -4px 0 4px;
+}
+.ann-back .link svg {
+  width: 18px;
+  height: 18px;
+  margin-right: 6px;
+}
+.ann-edit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  gap: 24px;
+  align-items: start;
+}
+.ann-form h2 {
+  font-size: 28px;
+}
+.ann-form h3 {
+  font: 600 13px var(--body);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--blue);
+  margin-top: 30px;
+  padding-top: 18px;
+  border-top: 1px solid var(--rule);
+}
+.ann-form .notice {
+  margin-top: 14px;
+}
+.field .check.tba {
+  display: flex;
+  margin: 10px 0 0;
+  font: 400 15px/1.4 var(--body);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink);
+}
+.field input:disabled {
+  background: var(--mute-t);
+  color: var(--ink-2);
+}
+.block-h .btns {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.ml-nums {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+.ml-nums div {
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--mute-t);
+}
+.ml-nums strong {
+  display: block;
+  font: 400 30px/1.1 var(--display);
+}
+.ml-nums span {
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.imp h2 {
+  font-size: 28px;
+  margin-bottom: 10px;
+}
+.imp p {
+  max-width: 62ch;
+}
+.imp .imp-pick {
+  margin-top: 18px;
+  cursor: pointer;
+}
+.imp .tw {
+  margin-top: 14px;
+}
+.imp-sum {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  display: grid;
+  gap: 8px;
+  font-size: 17px;
+}
+.imp-sum strong {
+  font: 400 24px var(--display);
+  margin-right: 6px;
+}
+.ann-test {
+  margin-top: 26px;
+  padding-top: 18px;
+  border-top: 1px solid var(--rule);
+}
+.ann-test label {
+  display: block;
+  font: 600 13px var(--body);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  margin-bottom: 7px;
+}
+.ann-test div {
+  display: flex;
+  gap: 10px;
+}
+.ann-test input {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  border-radius: 11px;
+  border: 1.5px solid var(--field);
+  background: var(--card);
+  color: var(--ink);
+  padding: 0 14px;
+  font-size: 16px;
+}
+.ann-send {
+  display: grid;
+  gap: 2px;
+}
+.ann-send .check {
+  margin-top: 8px;
+}
+/* ---------- email preferences ---------- */
+.prefs-body h1 {
+  font-size: clamp(46px, 5.4vw, 80px);
+}
+.prefs {
+  justify-self: center;
+  width: min(440px, 100%);
+  background: var(--card);
+  color: var(--ink);
+  border-radius: var(--r-card);
+  box-shadow: 0 34px 60px -30px rgb(0 0 0 / 55%);
+  padding: 30px 30px 24px;
+  --focus: #0a6fc2;
+}
+html[data-mode='dark'] .prefs {
+  --focus: #7ab9f5;
+}
+.prefs-k {
+  font: 600 12px var(--body);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.prefs-email {
+  font: 400 28px/1.2 var(--display);
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+.prefs-row {
+  display: grid;
+  /* minmax(0, …) lets the text column shrink on the narrowest phones instead of overflowing. */
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  margin: 22px 0;
+  padding: 18px 0;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+.prefs-ic {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: var(--mute-t);
+  color: var(--blue);
+}
+.prefs-row > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.prefs-row b {
+  display: block;
+  font-weight: 600;
+}
+.prefs-row span:not(.pill):not(.prefs-ic) {
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.pill {
+  font: 600 13px var(--body);
+  padding: 5px 12px;
+  border-radius: 999px;
+}
+.pill.on {
+  background: #e3f4ea;
+  /* Darker than --ok so the small label reads at 5.8:1 on its pale green (WCAG AA). */
+  color: #186a43;
+}
+.pill.off {
+  background: var(--mute-t);
+  color: var(--ink-2);
+}
+html[data-mode='dark'] .pill.on {
+  background: #123a2a;
+  color: var(--ok);
+}
+.prefs .err {
+  margin-top: 12px;
+}
+.ann-photos {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.ann-photos button {
+  width: 64px;
+  height: 48px;
+  border-radius: 10px;
+  overflow: hidden;
+  opacity: 0.7;
+  box-shadow: inset 0 0 0 1.5px var(--field);
+}
+.ann-photos button.none {
+  width: auto;
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.ann-photos button[aria-pressed='true'] {
+  opacity: 1;
+  box-shadow:
+    0 0 0 2px var(--card),
+    0 0 0 4px var(--blue);
+}
+.ann-photos img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.ann-aud {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 12px;
+  align-items: start;
+  margin-top: 26px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--mute-t);
+}
+.ann-aud svg {
+  margin-top: 2px;
+  color: var(--blue);
+}
+.ann-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  margin-top: 20px;
+}
+.ann-preview {
+  position: sticky;
+  top: 20px;
+  margin-top: 20px;
+}
+.ann-tabs {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.seg {
+  display: inline-flex;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--mute-t);
+}
+.seg button {
+  padding: 8px 14px;
+  border-radius: 9px;
+  font: 600 14px var(--body);
+  color: var(--ink-2);
+}
+.seg button[aria-pressed='true'] {
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgb(14 39 102 / 14%);
+}
+.ann-frame {
+  border-radius: 18px;
+  overflow: hidden;
+  background: #eef3fa;
+  box-shadow: var(--shadow);
+  margin: 0 auto;
+  transition: max-width 0.25s var(--ease);
+}
+.ann-frame.laptop {
+  max-width: 100%;
+}
+.ann-frame.phone {
+  max-width: 390px;
+}
+.ann-frame iframe.mail {
+  display: block;
+  width: 100%;
+  height: 900px;
+  border: 0;
+  background: #eef3fa;
+}
+.up-preview {
+  padding: 24px;
+  background: var(--canvas);
+}
+.ann-frame.laptop .up-preview .up-card {
+  grid-template-columns: 4fr 7fr;
+  grid-template-rows: none;
+}
+.ann-frame .up-preview .up-card h3 {
+  font-size: 26px;
+}
+.ann-frame.laptop .up-preview .up-face {
+  aspect-ratio: auto;
+  min-height: 260px;
+}
+.ann-frame .up-preview .up-date .d {
+  font-size: 72px;
+}
+.ann-frame .up-preview .up-img .up-date .d {
+  font-size: 30px;
+}
+
 /* ---------- share dialog ---------- */
 .share-bd {
   position: fixed;
@@ -1551,7 +2229,7 @@ td.acts .btn + .btn {
   opacity: 1;
   box-shadow:
     0 0 0 2px var(--card),
-    0 0 0 4px var(--gold);
+    0 0 0 4px var(--cta);
 }
 .share .thumbs img {
   width: 100%;
@@ -1622,7 +2300,8 @@ html[data-mode='dark'] .share .x {
     display: none;
   }
   .menu-btn {
-    display: block;
+    display: inline-flex;
+    flex: none;
   }
   .mobile-nav.open {
     display: grid;
@@ -1647,8 +2326,57 @@ html[data-mode='dark'] .share .x {
   .mobile-nav button:hover {
     background: var(--mute-t);
   }
+  /* The main action closes the menu as a full-width button. */
+  .mobile-nav .btn.primary {
+    justify-content: center;
+    margin-top: 8px;
+    min-height: 52px;
+    background: var(--cta);
+    color: var(--cta-ink);
+    box-shadow: 0 10px 24px -14px rgb(14 39 102 / 55%);
+  }
+  .mobile-nav .btn.primary:hover {
+    background: var(--cta-hover);
+  }
   .site {
     position: relative;
+  }
+}
+@media (max-width: 1180px) {
+  .ann-edit {
+    grid-template-columns: 1fr;
+  }
+  .ann-preview {
+    position: static;
+  }
+}
+@media (max-width: 760px) {
+  .up-list.one .up-card {
+    grid-template-columns: 1fr;
+  }
+  .up-list.one .up-face {
+    min-height: 0;
+    aspect-ratio: 16 / 10;
+  }
+  .up-list.one .up-body {
+    padding: 26px 24px 30px;
+  }
+  .upcoming {
+    padding-bottom: 56px;
+  }
+  .ann-row {
+    grid-template-columns: 56px 1fr;
+  }
+  .ml-nums {
+    grid-template-columns: 1fr;
+  }
+  .ann-row img,
+  .ann-ph {
+    width: 56px;
+    height: 44px;
+  }
+  .ann-s {
+    justify-items: start;
   }
 }
 @media (max-width: 760px) {
@@ -1666,6 +2394,7 @@ html[data-mode='dark'] .share .x {
   .brand {
     gap: 12px;
     font-size: 21px;
+    white-space: nowrap;
   }
   .brand .logo {
     height: 38px;
@@ -1943,5 +2672,19 @@ html[data-mode='dark'] .share .x {
   *::after {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+@media (max-width: 370px) {
+  /* Narrow phones: the menu button keeps its icon and drops the word, so the name fits. */
+  .menu-btn {
+    padding: 0 12px;
+  }
+  .menu-btn span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
   }
 }

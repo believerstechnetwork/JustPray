@@ -92,6 +92,51 @@ export interface NewContribution {
   amount: number;
 }
 
+/** Another BTN event (not a Just Pray gathering), announced by email and listed on the site. */
+export interface AnnouncementFields {
+  title: string;
+  /** YYYY-MM-DD */
+  date: string;
+  endDate: string | null;
+  /** "HH:MM" in Lagos, or null. */
+  time: string | null;
+  /** The event's theme, e.g. "Building with purpose"; null when there is none (yet). */
+  theme: string | null;
+  /** The theme is still to be announced. */
+  themeTba: boolean;
+  /** A place, or "Online". With `venueTba`, an optional city such as "Lagos". */
+  venue: string;
+  /** The venue is still to be announced. */
+  venueTba: boolean;
+  summary: string;
+  imageUrl: string | null;
+  linkUrl: string | null;
+  linkLabel: string | null;
+  subject: string;
+  message: string;
+}
+
+export interface AnnouncementRecord extends AnnouncementFields {
+  id: number;
+  status: 'draft' | 'published';
+  publishedAt: string | null;
+  /** Emails the mail service accepted so far (it took the message; inbox delivery is not
+   *  confirmed). */
+  sentCount: number;
+  /** Emails closed without a confirmed delivery: failed (some may still have arrived, such as
+   *  after a timeout), or skipped because the person unsubscribed. Sending is finished once
+   *  sentCount + unsentCount reaches recipients. */
+  unsentCount: number;
+  /** Who it was sent to, once published. */
+  audience: AudienceScope | null;
+  /** People it was sent to when published. */
+  recipients: number;
+  createdAt: string;
+  /** The email exactly as published. Later batches send this, so edits to the published
+   *  event (which change the home page) never change what the rest of the list receives. */
+  emailContent?: AnnouncementFields | null;
+}
+
 /** Storage used by the API. `SupabaseDb` in production, `MemoryDb` in tests and local dev. */
 export interface Db {
   currentEvent(): Promise<EventDetails | null>;
@@ -125,6 +170,56 @@ export interface Db {
   markContributionSent(reference: string): Promise<ContributionRecord | null>;
   setContributionStatus(id: number, status: ContributionStatus): Promise<ContributionRecord | null>;
   listContributions(): Promise<ContributionRecord[]>;
+  /** Newest first. */
+  listAnnouncements(): Promise<AnnouncementRecord[]>;
+  createAnnouncement(fields: AnnouncementFields): Promise<AnnouncementRecord>;
+  updateAnnouncement(id: number, fields: AnnouncementFields): Promise<AnnouncementRecord | null>;
+  deleteDraftAnnouncement(id: number): Promise<boolean>;
+  announcementById(id: number): Promise<AnnouncementRecord | null>;
+  /** Draft to published, once, and one outbox email queued per person in `updatesAudience(scope)`,
+   *  in the same step. Null when unknown or already published. */
+  publishAnnouncement(id: number, scope: AudienceScope): Promise<AnnouncementRecord | null>;
+  /** Claim up to `limit` queued emails, never more than `dailyLimit` sent in the last 24 hours.
+   *  After 10 minutes, a claim that never started sending goes back in the queue; a send that
+   *  started but never finished is closed as failed, never sent again, since it may have gone
+   *  out. */
+  claimOutbox(limit: number, dailyLimit: number): Promise<OutboxItem[]>;
+  /** Switch a claimed email to sending, just before it goes out. False when this run no longer
+   *  holds the claim (it stalled and the claim was given back or taken): then it must not send. */
+  beginOutbox(id: number, claimToken: string): Promise<boolean>;
+  /** Record what happened to one claimed email, by the run holding its claim token (a run
+   *  whose claim has expired changes nothing): `sent`; `retry` (nothing went out: back in the
+   *  queue, failed after 3 attempts in all); `failed` (closed, never retried, because it may
+   *  have gone out or can never go); `skipped` (closed unsent: the person unsubscribed); or
+   *  `later` (not sent because the mail service's quota is used up: back in the queue without
+   *  using an attempt). */
+  finishOutbox(
+    id: number,
+    claimToken: string,
+    outcome: OutboxOutcome,
+    error?: string,
+  ): Promise<void>;
+  isUnsubscribed(email: string): Promise<boolean>;
+  /** Unsubscribe the person behind an unsubscribe link. Returns their email, or null. */
+  unsubscribe(token: string): Promise<string | null>;
+  /** Undo an unsubscribe from the same link. Returns their email, or null. */
+  resubscribe(token: string): Promise<string | null>;
+  /** Who an unsubscribe link belongs to, and whether they still get announcements. */
+  subscriptionByToken(token: string): Promise<{ email: string; subscribed: boolean } | null>;
+  /** Published events that have not ended by this Lagos date, soonest first. */
+  upcomingAnnouncements(todayIso: string, limit: number): Promise<AnnouncementRecord[]>;
+  /** Everyone who gets announcements, one per email: people who booked and asked to hear about
+   *  future events ('booked'), imported contacts ('imported'), or both ('all'), less anyone who
+   *  unsubscribed. Someone on both lists is listed once, as "Booked a seat". */
+  updatesAudience(scope?: AudienceScope): Promise<AudienceMember[]>;
+  /** Add imported people to the list. Emails are already checked and lower-case. `importKey`
+   *  names one import across its batches: the same batch sent again under it (after its reply
+   *  was lost) gets back the result it had the first time, whatever has changed since. */
+  importContacts(
+    people: { name: string; email: string }[],
+    label: string,
+    importKey?: string | null,
+  ): Promise<ImportResult>;
   ping(): Promise<void>;
 }
 
@@ -133,12 +228,62 @@ export interface Email {
   subject: string;
   text: string;
   html: string;
+  /** Extra headers, e.g. List-Unsubscribe on announcements. */
+  headers?: Record<string, string>;
+  /** The same key on a repeat makes Resend drop it instead of sending the email twice. */
+  idempotencyKey?: string;
+}
+
+/** Who an announcement goes to: people who booked and asked for updates, imported people, or both. */
+export type AudienceScope = 'all' | 'booked' | 'imported';
+
+/** What happened to one queued announcement email. See Db.finishOutbox. */
+export type OutboxOutcome = 'sent' | 'retry' | 'failed' | 'skipped' | 'later';
+export const AUDIENCE_SCOPES: readonly AudienceScope[] = ['all', 'booked', 'imported'];
+
+/** Someone who gets announcements, and how they joined the list. */
+export interface AudienceMember {
+  name: string;
+  email: string;
+  /** "Booked a seat", or the label given to an Excel import. */
+  source: string;
+}
+
+export interface ImportResult {
+  /** Newly added to the list. */
+  added: number;
+  /** Already imported (a contact row exists) and still subscribed. Someone who only booked a seat
+   *  has no contact row yet, so importing them counts as added. */
+  existing: number;
+  /** Unsubscribed earlier, so not added back. */
+  unsubscribed: number;
+}
+
+/** One announcement email waiting in the outbox, claimed for sending. */
+export interface OutboxItem {
+  id: number;
+  announcementId: number;
+  name: string;
+  email: string;
+  /** Private token for this person's unsubscribe link. */
+  unsubToken: string;
+  /** Proves this run holds the claim; needed to start sending. */
+  claimToken: string;
 }
 
 export interface Mailer {
   /** Name used in logs, e.g. "gmail". */
   readonly kind: string;
   send(email: Email): Promise<void>;
+  /** True only when the mail service confirmed it did not accept the message (it refused it, or
+   *  the send never reached it), so sending again cannot reach the person twice. An uncertain
+   *  outcome such as a timeout must return false, even where the service drops repeats by an
+   *  idempotency key: that protection expires, and does not carry over to another service.
+   *  Without this method, a failed send is never retried. */
+  canRetry?(error: unknown): boolean;
+  /** True when the service refused because its sending quota is used up for now. Those emails
+   *  wait for the quota to reset instead of using up their attempts. */
+  isQuota?(error: unknown): boolean;
 }
 
 export interface BankDetails {

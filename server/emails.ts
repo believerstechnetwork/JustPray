@@ -36,6 +36,10 @@ interface Detail {
 }
 
 /** A button that survives Outlook: a padded link inside a coloured table cell. */
+/** A link the email may show as a button: web addresses only, never javascript: or data:. */
+const webLink = (v: string | null | undefined): string | undefined =>
+  v && /^https?:\/\//i.test(v.trim()) ? v.trim() : undefined;
+
 function button(label: string, href: string, kind: 'solid' | 'outline'): string {
   const solid = kind === 'solid';
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="display:inline-table;margin:0 8px 10px 0"><tr><td class="${solid ? 'btn-solid' : 'btn-outline'}" style="border-radius:12px;${solid ? fixed(C.indigo) : `background:${C.card}`};border:1.5px solid ${solid ? C.indigo : C.rule}"><a href="${esc(href)}" style="display:inline-block;padding:13px 22px;font:600 15px/1 ${SANS};color:${solid ? '#FFFFFF' : C.indigo};text-decoration:none;border-radius:12px">${label}</a></td></tr></table>`;
@@ -74,9 +78,15 @@ interface LayoutInput {
   /** Why this person is getting the email. */
   reason: string;
   siteUrl: string;
+  /** A wide picture under the header, e.g. an event's banner. Absolute URL. */
+  banner?: string;
+  bannerAlt?: string;
+  /** Shown in the footer of announcements; required for bulk email. */
+  unsubscribeUrl?: string;
 }
 
-function layout({ preheader, heading, body, reason, siteUrl }: LayoutInput): string {
+function layout(input: LayoutInput): string {
+  const { preheader, heading, body, reason, siteUrl, banner, bannerAlt, unsubscribeUrl } = input;
   const site = siteUrl.replace(/\/+$/, '');
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -105,12 +115,13 @@ body,.bg{background:#081128 !important}.card{background:#0F1E44 !important}
 <td valign="middle" style="padding:0 0 0 16px;font:400 20px/1 ${SERIF};color:#FFFFFF;white-space:nowrap">Just Pray</td>
 </tr></table></td></tr>
 <tr><td style="height:4px;${fixed(C.gold)};line-height:4px;font-size:0">&nbsp;</td></tr>
+${banner ? `<tr><td style="background:${C.card};font-size:0;line-height:0"><img src="${esc(banner)}" width="560" alt="${esc(bannerAlt ?? '')}" style="display:block;width:100%;height:auto;max-height:280px;object-fit:cover;border:0"></td></tr>` : ''}
 <tr><td class="card" style="background:${C.card};border-radius:0 0 20px 20px;padding:36px 36px 30px;font:400 16px/1.6 ${SANS};color:${C.ink}">
 <h1 style="margin:0 0 12px;font:400 32px/1.15 ${SERIF};color:${C.ink}">${heading}</h1>
 ${body}
 </td></tr>
 <tr><td class="foot" align="center" style="padding:24px 12px 8px;font:400 13px/1.6 ${SANS};color:${C.ink2}">
-Just Pray · a free monthly prayer gathering for people in tech<br>by Believers Tech Network · <a class="link" href="${esc(site)}" style="color:${C.blue};text-decoration:none">${esc(site.replace(/^https?:\/\//, ''))}</a><br><span style="font-size:12px">${esc(reason)}</span>
+Just Pray · a free monthly prayer gathering for people in tech<br>by Believers Tech Network · <a class="link" href="${esc(site)}" style="color:${C.blue};text-decoration:none">${esc(site.replace(/^https?:\/\//, ''))}</a><br><span style="font-size:12px">${esc(reason)}${unsubscribeUrl ? `<br><a class="link" href="${esc(unsubscribeUrl)}" style="color:${C.blue};font-weight:600">Unsubscribe or manage your emails</a>` : ''}</span>
 </td></tr>
 </table></td></tr></table></body></html>`;
 }
@@ -236,6 +247,169 @@ ${para('If your plans change, you can reserve again while seats remain.')}
       body,
       reason: 'You’re getting this because you cancelled your seat.',
       siteUrl: site,
+    }),
+  };
+}
+
+/* ---------- announcements: other BTN events, sent to people who asked to hear about them ---------- */
+
+export interface AnnouncementContent {
+  title: string;
+  /** YYYY-MM-DD */
+  date: string;
+  /** Optional last day, for events over several days. */
+  endDate?: string;
+  /** Optional "HH:MM" start time in Lagos. */
+  time?: string;
+  theme?: string;
+  themeTba?: boolean;
+  /** A place, or "Online". With `venueTba`, an optional city. */
+  venue: string;
+  venueTba?: boolean;
+  /** One or two sentences, used on the site and as the inbox preview line. */
+  summary: string;
+  /** Absolute URL of a wide picture, optional. */
+  imageUrl?: string;
+  /** Where people register or read more, optional. */
+  linkUrl?: string;
+  linkLabel?: string;
+  subject: string;
+  /** The email's message. Blank lines start paragraphs; **bold**, [text](link) and plain links work.
+   *  "{first name}" is replaced with each person's first name. */
+  message: string;
+}
+
+/** Dates as people say them: "Thursday, 9 September 2027", or "9 to 11 September 2027". */
+export function eventDates(date: string, endDate?: string): string {
+  if (!endDate || endDate === date) return longDate(date);
+  const a = new Date(`${date}T12:00:00`);
+  const b = new Date(`${endDate}T12:00:00`);
+  const dm = (d: Date, o: Intl.DateTimeFormatOptions) => d.toLocaleDateString('en-GB', o);
+  if (a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth())
+    return `${a.getDate()} to ${dm(b, { day: 'numeric', month: 'long', year: 'numeric' })}`;
+  return `${dm(a, { day: 'numeric', month: 'long' })} to ${dm(b, { day: 'numeric', month: 'long', year: 'numeric' })}`;
+}
+
+/** "Landmark Centre, Lagos"; "Lagos · venue to be announced"; or "Venue to be announced". */
+export function venueLine(a: { venue: string; venueTba?: boolean | null }): string {
+  const v = a.venue.trim();
+  if (!a.venueTba) return v;
+  return v ? `${v} · venue to be announced` : 'Venue to be announced';
+}
+
+/** The theme as shown, "To be announced", or null when the event has no theme. */
+export function themeLine(a: { theme?: string | null; themeTba?: boolean | null }): string | null {
+  if (a.themeTba) return 'To be announced';
+  return a.theme?.trim() || null;
+}
+
+/** The small set of formatting the message box allows, made safe: everything is escaped first. */
+export function messageHtml(message: string, linkColour: string = C.blue): string[] {
+  const inline = (line: string): string =>
+    esc(line)
+      .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+      .replace(
+        /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<]+[^\s<.,;:!?)])/g,
+        (_m, text: string | undefined, href: string | undefined, bare: string | undefined) => {
+          const url = href ?? bare ?? '';
+          return `<a href="${url}" style="color:${linkColour}">${text ?? url}</a>`;
+        },
+      );
+  return message
+    .trim()
+    .split(/\n\s*\n/)
+    .filter((p) => p.trim())
+    .map((p) => p.split('\n').map(inline).join('<br>'));
+}
+
+/** Put the first name in place of {first name}. A replacer function inserts it literally, so a
+ *  name like "$&" stays as typed. */
+const personalise = (text: string, first: string): string =>
+  text.replace(/\{\s*first name\s*\}/gi, () => first || 'friend');
+
+/** The event card in an announcement: an indigo strip with the date, then the details. */
+function eventCard(a: AnnouncementContent): string {
+  const theme = themeLine(a);
+  const details: Detail[] = [
+    { label: 'Date', value: eventDates(a.date, a.endDate) },
+    ...(a.time ? [{ label: 'Time', value: displayTime(a.time) }] : []),
+    { label: a.venue.toLowerCase() === 'online' ? 'Where' : 'Venue', value: venueLine(a) },
+    ...(theme ? [{ label: 'Theme', value: theme }] : []),
+  ];
+  const d = new Date(`${a.date}T12:00:00`);
+  const month = d.toLocaleDateString('en-GB', { month: 'short' }).toUpperCase();
+  // Two details per row, so a long venue or theme has room.
+  const cells = details
+    .map(
+      (x) =>
+        `<td class="stub-cell" valign="top" width="50%" style="padding:0 16px 16px 0"><div class="mute" style="font:600 11px/1.3 ${SANS};letter-spacing:.08em;text-transform:uppercase;color:${C.ink2}">${esc(x.label)}</div><div class="ink" style="font:600 16px/1.4 ${SANS};color:${C.ink};padding-top:3px">${esc(x.value)}</div></td>`,
+    )
+    .reduce<string[]>((rows, cell, i) => {
+      if (i % 2 === 0) rows.push(cell);
+      else rows[rows.length - 1] += cell;
+      return rows;
+    }, [])
+    .map((r) => `<tr>${r}</tr>`)
+    .join('');
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;margin:26px 0 24px">
+<tr><td style="${fixed(C.indigo)};border-radius:16px 16px 0 0;padding:18px 22px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td valign="bottom" style="font:600 12px/1.4 ${SANS};letter-spacing:.16em;text-transform:uppercase;color:#C5D6F2">From Believers<br>Tech Network</td><td align="right" valign="bottom" style="font:400 13px/1 ${SANS};letter-spacing:.12em;color:#C5D6F2">${month} <span style="font:400 40px/1 ${SERIF};letter-spacing:0;color:${C.gold}">${d.getDate()}</span></td></tr></table></td></tr>
+<tr><td class="stub" style="background:${C.tint};border-top:2px dashed ${C.rule};border-radius:0 0 16px 16px;padding:18px 22px 4px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${cells}</table></td></tr>
+</table>`;
+}
+
+export interface AnnouncementInput {
+  announcement: AnnouncementContent;
+  name: string;
+  email: string;
+  siteUrl: string;
+  unsubscribeUrl: string;
+}
+
+/** An announcement of another BTN event, to someone who asked to hear about future events. */
+export function announcementEmail(input: AnnouncementInput): Email {
+  const { announcement: a, name, email, siteUrl, unsubscribeUrl } = input;
+  const site = siteUrl.replace(/\/+$/, '');
+  const first = firstName(name);
+  const link = webLink(a.linkUrl);
+  // Plain text gets the name as typed. The HTML gets it only after the message's formatting
+  // (bold, links) has been turned into HTML, and escaped, so a name such as
+  // "[Click](https://…)" can never become a link.
+  const message = personalise(a.message, first);
+  const when = [eventDates(a.date, a.endDate), a.time ? displayTime(a.time) : '']
+    .filter(Boolean)
+    .join(', ');
+  const text = [
+    message.trim(),
+    '',
+    a.title,
+    `When:  ${when}`,
+    `Where: ${venueLine(a)}`,
+    ...(themeLine(a) ? [`Theme: ${themeLine(a)}`] : []),
+    ...(link ? ['', `${a.linkLabel || 'Learn more'}: ${link}`] : []),
+    '',
+    'Believers Tech Network',
+    site,
+    '',
+    `You're getting this because you asked to hear about future events. Unsubscribe or manage your emails: ${unsubscribeUrl}`,
+  ].join('\n');
+  const body = `${messageHtml(a.message)
+    .map((p) => para(personalise(p, esc(first))))
+    .join('\n')}
+${eventCard(a)}
+${link ? `<div>${button(esc(a.linkLabel || 'Learn more'), link, 'solid')}</div>` : ''}`;
+  return {
+    to: email,
+    subject: a.subject,
+    text,
+    html: layout({
+      preheader: a.summary,
+      heading: esc(a.title),
+      body,
+      reason: 'You’re getting this because you asked to hear about future events.',
+      siteUrl: site,
+      banner: a.imageUrl,
+      bannerAlt: a.title,
+      unsubscribeUrl,
     }),
   };
 }

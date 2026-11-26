@@ -1,6 +1,13 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type {
+  OutboxOutcome,
+  AnnouncementFields,
+  AnnouncementRecord,
+  AudienceMember,
+  AudienceScope,
   CancelLookup,
+  ImportResult,
+  OutboxItem,
   ContributionRecord,
   ContributionStatus,
   Db,
@@ -11,6 +18,7 @@ import type {
   ReserveOutcome,
   UpdateEventOutcome,
 } from './types';
+import { orderUpcoming } from './upcoming';
 
 /** Postgres unique-violation error code. */
 const UNIQUE_VIOLATION = '23505';
@@ -65,6 +73,63 @@ const toContribution = (r: Row): ContributionRecord => ({
   markedSentAt: opt(r.marked_sent_at),
   reviewedAt: opt(r.reviewed_at),
   createdAt: s(r.created_at),
+});
+
+const optStr = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null);
+
+/** The event and email an organiser wrote: what a published announcement's snapshot holds. */
+const toAnnouncementFields = (r: Row): AnnouncementFields => ({
+  title: s(r.title),
+  date: s(r.date),
+  endDate: optStr(r.end_date),
+  time: optStr(r.time),
+  theme: optStr(r.theme),
+  themeTba: r.theme_tba === true,
+  venue: s(r.venue),
+  venueTba: r.venue_tba === true,
+  summary: s(r.summary),
+  imageUrl: optStr(r.image_url),
+  linkUrl: optStr(r.link_url),
+  linkLabel: optStr(r.link_label),
+  subject: s(r.subject),
+  message: s(r.message),
+});
+
+const toAnnouncement = (r: Row): AnnouncementRecord => ({
+  ...toAnnouncementFields(r),
+  id: n(r.id),
+  status: r.status === 'published' ? 'published' : 'draft',
+  publishedAt: opt(r.published_at),
+  sentCount: n(r.sent_count),
+  unsentCount: n(r.unsent_count),
+  audience:
+    r.audience === 'booked' || r.audience === 'imported' || r.audience === 'all'
+      ? r.audience
+      : null,
+  recipients: n(r.recipients),
+  createdAt: s(r.created_at),
+  // The email as published: only its content, decoded the same way as the live row's.
+  emailContent:
+    r.email_content && typeof r.email_content === 'object'
+      ? toAnnouncementFields(r.email_content as Row)
+      : null,
+});
+
+const announcementRow = (f: AnnouncementFields) => ({
+  title: f.title,
+  date: f.date,
+  end_date: f.endDate,
+  time: f.time,
+  theme: f.theme,
+  theme_tba: f.themeTba,
+  venue: f.venue,
+  venue_tba: f.venueTba,
+  summary: f.summary,
+  image_url: f.imageUrl,
+  link_url: f.linkUrl,
+  link_label: f.linkLabel,
+  subject: f.subject,
+  message: f.message,
 });
 
 function check<T>(res: { data: T; error: { message: string; code?: string } | null }): T {
@@ -319,6 +384,166 @@ export class SupabaseDb implements Db {
     return rows
       .map(toContribution)
       .sort((a, b) => time(b.createdAt) - time(a.createdAt) || b.id - a.id);
+  }
+
+  async listAnnouncements(): Promise<AnnouncementRecord[]> {
+    const rows = await this.all('id', (after) =>
+      this.sb
+        .from('announcements')
+        .select('*')
+        .gt('id', after)
+        .order('id', { ascending: true })
+        .limit(PAGE),
+    );
+    return rows.map(toAnnouncement).reverse();
+  }
+
+  async createAnnouncement(fields: AnnouncementFields): Promise<AnnouncementRecord> {
+    const row = check(
+      await this.sb.from('announcements').insert(announcementRow(fields)).select().single(),
+    ) as Row;
+    return toAnnouncement(row);
+  }
+
+  async updateAnnouncement(
+    id: number,
+    fields: AnnouncementFields,
+  ): Promise<AnnouncementRecord | null> {
+    const rows = check(
+      await this.sb.from('announcements').update(announcementRow(fields)).eq('id', id).select(),
+    ) as Row[];
+    return rows[0] ? toAnnouncement(rows[0]) : null;
+  }
+
+  async deleteDraftAnnouncement(id: number): Promise<boolean> {
+    const rows = check(
+      await this.sb.from('announcements').delete().eq('id', id).eq('status', 'draft').select('id'),
+    ) as Row[];
+    return rows.length > 0;
+  }
+
+  async announcementById(id: number): Promise<AnnouncementRecord | null> {
+    const rows = check(
+      await this.sb.from('announcements').select('*').eq('id', id).limit(1),
+    ) as Row[];
+    return rows[0] ? toAnnouncement(rows[0]) : null;
+  }
+
+  async publishAnnouncement(id: number, scope: AudienceScope): Promise<AnnouncementRecord | null> {
+    // One database function publishes and queues the emails together, and only from a draft,
+    // so two presses publish (and send) once.
+    const rows = check(
+      await this.sb.rpc('publish_announcement', { p_id: id, p_scope: scope }),
+    ) as Row[];
+    return rows[0] ? toAnnouncement(rows[0]) : null;
+  }
+
+  async claimOutbox(limit: number, dailyLimit: number): Promise<OutboxItem[]> {
+    const rows = check(
+      await this.sb.rpc('claim_announcement_sends', { p_limit: limit, p_daily: dailyLimit }),
+    ) as Row[];
+    return rows.map((r) => ({
+      id: n(r.id),
+      announcementId: n(r.announcement_id),
+      name: s(r.name),
+      email: s(r.email),
+      unsubToken: s(r.unsub_token),
+      claimToken: s(r.claim_token),
+    }));
+  }
+
+  async beginOutbox(id: number, claimToken: string): Promise<boolean> {
+    const res = check(
+      await this.sb.rpc('begin_announcement_send', { p_id: id, p_token: claimToken }),
+    );
+    return res === true;
+  }
+
+  async finishOutbox(
+    id: number,
+    claimToken: string,
+    outcome: OutboxOutcome,
+    error?: string,
+  ): Promise<void> {
+    check(
+      await this.sb.rpc('finish_announcement_send', {
+        p_id: id,
+        p_token: claimToken,
+        p_outcome: outcome,
+        p_error: error ?? null,
+      }),
+    );
+  }
+
+  async isUnsubscribed(email: string): Promise<boolean> {
+    const rows = check(
+      await this.sb.from('unsubscribes').select('id').eq('email', email).limit(1),
+    ) as Row[];
+    return rows.length > 0;
+  }
+
+  async resubscribe(token: string): Promise<string | null> {
+    const email = check(await this.sb.rpc('resubscribe_by_token', { p_token: token })) as unknown;
+    return typeof email === 'string' && email ? email : null;
+  }
+
+  async subscriptionByToken(token: string): Promise<{ email: string; subscribed: boolean } | null> {
+    const rows = check(await this.sb.rpc('subscription_by_token', { p_token: token })) as Row[];
+    const r = rows[0];
+    return r ? { email: s(r.email), subscribed: r.subscribed === true } : null;
+  }
+
+  async unsubscribe(token: string): Promise<string | null> {
+    const email = check(await this.sb.rpc('unsubscribe_by_token', { p_token: token })) as unknown;
+    return typeof email === 'string' && email ? email : null;
+  }
+
+  async importContacts(
+    people: { name: string; email: string }[],
+    label: string,
+    importKey: string | null = null,
+  ): Promise<ImportResult> {
+    const rows = check(
+      await this.sb.rpc('import_contacts', {
+        p_people: people,
+        p_label: label,
+        p_import: importKey,
+      }),
+    ) as Row[];
+    const r = rows[0] ?? {};
+    return { added: n(r.added), existing: n(r.existing), unsubscribed: n(r.unsubscribed) };
+  }
+
+  async upcomingAnnouncements(todayIso: string, limit: number): Promise<AnnouncementRecord[]> {
+    // Every published event that has not ended, read a page at a time by id until a page comes
+    // back empty (the server may cap a page below what was asked), so the order below sees them
+    // all; there are only ever a handful.
+    const rows = await this.all('id', (after) =>
+      this.sb
+        .from('announcements')
+        .select('*')
+        .eq('status', 'published')
+        .or(`end_date.gte.${todayIso},and(end_date.is.null,date.gte.${todayIso})`)
+        .gt('id', after)
+        .order('id', { ascending: true })
+        .limit(PAGE),
+    );
+    return orderUpcoming(rows.map(toAnnouncement), todayIso, limit);
+  }
+
+  async updatesAudience(scope: AudienceScope = 'all'): Promise<AudienceMember[]> {
+    // The function returns people ordered by email; read it a page at a time (responses are
+    // capped), moving past the last email seen.
+    const out: AudienceMember[] = [];
+    let after = '';
+    for (;;) {
+      const rows = check(
+        await this.sb.rpc('updates_audience', { p_scope: scope, p_after: after, p_limit: PAGE }),
+      ) as Row[];
+      if (rows.length === 0) return out;
+      for (const r of rows) out.push({ name: s(r.name), email: s(r.email), source: s(r.source) });
+      after = s(rows[rows.length - 1]?.email);
+    }
   }
 
   async ping(): Promise<void> {

@@ -1,7 +1,12 @@
 import { createHash, randomBytes, randomInt } from 'node:crypto';
 import { icsFile } from '../src/lib/calendar';
 import { parseTime, startsAt } from '../src/lib/format';
-import { fieldsOf, validateContribution, validateRegistration } from '../src/lib/validation';
+import {
+  EMAIL_RE,
+  fieldsOf,
+  validateContribution,
+  validateRegistration,
+} from '../src/lib/validation';
 import {
   clearedCookie,
   createSession,
@@ -11,12 +16,17 @@ import {
   sessionCookie,
   sessionIsValid,
 } from './auth';
-import { cancelledEmail, reservationEmail } from './emails';
+import { announcementEmail, cancelledEmail, reservationEmail } from './emails';
+import { processOutbox } from './outbox';
 import {
   CONTRIBUTION_STATUSES,
   type BankDetails,
   type Banks,
   type ContributionRecord,
+  AUDIENCE_SCOPES,
+  type AnnouncementFields,
+  type AnnouncementRecord,
+  type AudienceScope,
   type ContributionStatus,
   type Db,
   type EventDetails,
@@ -40,10 +50,22 @@ export interface ApiDeps {
   log?: (message: string, error?: unknown) => void;
   /** Delay after a wrong organiser password, to slow down guessing. */
   failedLoginDelayMs?: number;
+  /** Where "Send a test to me" goes by default (the organisers' inbox). */
+  testEmail?: string;
+  /** Most announcement emails to send in 24 hours, to stay within the mail service's limit. */
+  dailyLimit?: number;
 }
 
 const MAX_BODY = 10_000;
+/** Imports can be larger: about 5,000 people. */
+/** Room for 5,000 people with the longest names (120) and emails (254) the import keeps, with
+ *  JSON quoting and escapes to spare. */
+const MAX_IMPORT_BODY = 2_500_000;
+const MAX_IMPORT = 5000;
 export const PRODUCTION_URL = 'https://justprayy.netlify.app';
+/** Announcement emails per 24 hours. Gmail allows about 500 a day in all; this leaves room for
+ *  seat confirmations. Set ANNOUNCE_DAILY_LIMIT to change it (e.g. after moving to Resend). */
+export const DAILY_LIMIT = 350;
 /** How long a gathering stays open for cancelling after it starts. */
 const CANCEL_GRACE_MS = 60 * 60 * 1000;
 const REF_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -71,6 +93,20 @@ async function readJson(req: Request): Promise<unknown> {
     throw new HttpError(415, 'Send JSON.');
   const raw = await req.text();
   if (raw.length > MAX_BODY) throw new HttpError(413, 'Request is too large.');
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    throw new HttpError(400, 'Request is not valid JSON.');
+  }
+}
+
+/** Like readJson, with room for an imported list. */
+async function readImport(req: Request): Promise<unknown> {
+  if (!(req.headers.get('content-type') ?? '').includes('application/json'))
+    throw new HttpError(415, 'Send JSON.');
+  const raw = await req.text();
+  if (raw.length > MAX_IMPORT_BODY)
+    throw new HttpError(413, 'The list is too large to import at once.');
   try {
     return JSON.parse(raw) as unknown;
   } catch {
@@ -163,6 +199,108 @@ function validEvent(body: unknown, reserved: number): EventDetails {
   return event;
 }
 
+/** A public https link (or this computer, during local development). */
+const httpsUrl = (v: string): boolean => {
+  try {
+    const u = new URL(v);
+    return u.protocol === 'https:' || (u.protocol === 'http:' && u.hostname === 'localhost');
+  } catch {
+    return false;
+  }
+};
+
+/** Check an announcement from the organiser form; throws a 400 with a message to show. */
+export function validAnnouncement(body: unknown): AnnouncementFields {
+  const str = (k: string): string => {
+    const v = field(body, k);
+    return typeof v === 'string' ? v.trim() : '';
+  };
+  const orNull = (v: string): string | null => v || null;
+  const f: AnnouncementFields = {
+    title: str('title'),
+    date: str('date'),
+    endDate: orNull(str('endDate')),
+    time: str('time') ? parseTime(str('time')) : null,
+    theme: orNull(str('theme')),
+    themeTba: field(body, 'themeTba') === true,
+    venue: str('venue'),
+    venueTba: field(body, 'venueTba') === true,
+    summary: str('summary'),
+    imageUrl: orNull(str('imageUrl')),
+    linkUrl: orNull(str('linkUrl')),
+    linkLabel: orNull(str('linkLabel')),
+    subject: str('subject'),
+    message: str('message'),
+  };
+  // A real calendar day: the parsed date must give back the same year, month and day, so an
+  // overflow such as 2027-02-30 (which would roll into March) is refused.
+  const isDate = (d: string): boolean => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+    const t = Date.parse(`${d}T00:00:00Z`);
+    return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === d;
+  };
+  if (!f.title || !f.summary || !f.subject || !f.message)
+    throw new HttpError(400, 'Fill in the title, summary, subject and message.');
+  if (!f.venue && !f.venueTba)
+    throw new HttpError(400, 'Fill in the venue, or tick “Venue to be announced”.');
+  if (f.themeTba) f.theme = null;
+  if (!isDate(f.date)) throw new HttpError(400, 'Enter the event date.');
+  if (f.endDate && (!isDate(f.endDate) || f.endDate < f.date))
+    throw new HttpError(400, 'The end date must be on or after the start date.');
+  if (str('time') && !f.time) throw new HttpError(400, 'Enter the start time with the picker.');
+  if (f.imageUrl && !httpsUrl(f.imageUrl))
+    throw new HttpError(400, 'The picture link must start with https://');
+  if (f.linkUrl && !httpsUrl(f.linkUrl))
+    throw new HttpError(400, 'The button link must start with https://');
+  type TextField = 'title' | 'theme' | 'venue' | 'summary' | 'linkLabel' | 'subject' | 'message';
+  const limits: [TextField, number][] = [
+    ['title', 120],
+    ['theme', 160],
+    ['venue', 200],
+    ['summary', 280],
+    ['linkLabel', 40],
+    ['subject', 150],
+    ['message', 5000],
+  ];
+  for (const [k, max] of limits)
+    if ((f[k] ?? '').length > max) throw new HttpError(400, `The ${k} is too long.`);
+  return f;
+}
+
+/** The stored fields in the shape the email template takes. */
+export const toContent = (f: AnnouncementFields) => ({
+  ...f,
+  endDate: f.endDate ?? undefined,
+  time: f.time ?? undefined,
+  theme: f.theme ?? undefined,
+  imageUrl: f.imageUrl ?? undefined,
+  linkUrl: f.linkUrl ?? undefined,
+  linkLabel: f.linkLabel ?? undefined,
+});
+
+/** "adaobi@example.com" -> "ad•••@example.com": enough to recognise, not to read off a screen. */
+export const maskEmail = (email: string): string => {
+  const [user = '', domain = ''] = email.split('@');
+  return `${user.slice(0, Math.min(2, Math.max(1, user.length - 1)))}•••@${domain}`;
+};
+
+/** What the public site shows of an announcement. */
+const publicAnnouncement = (a: AnnouncementRecord) => ({
+  id: a.id,
+  title: a.title,
+  date: a.date,
+  endDate: a.endDate,
+  time: a.time,
+  theme: a.theme,
+  themeTba: a.themeTba,
+  venue: a.venue,
+  venueTba: a.venueTba,
+  summary: a.summary,
+  imageUrl: a.imageUrl,
+  linkUrl: a.linkUrl,
+  linkLabel: a.linkLabel,
+});
+
 const publicReservation = (r: ReservationRecord) => ({
   seat: r.seat,
   code: r.code,
@@ -237,10 +375,14 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
           reservationEmail({ name, email, seat, code, event, eventId, siteUrl, cancelUrl: link }),
         );
       } catch (e) {
-        // Only a failure that is recorded lets a later booking attempt re-send the email.
-        await db()
-          .markEmailFailed(held.id, hash)
-          .catch(() => undefined);
+        // Only a failure that is recorded lets a later booking attempt re-send the email (with a
+        // new cancel link). Record it only when the mail service certainly did not take the email:
+        // after a timeout or an aborted send it may already be in the inbox, and a second copy
+        // would carry a different cancel link. Those stay unrecorded, so they are never re-sent.
+        if (mailer.canRetry ? mailer.canRetry(e) : true)
+          await db()
+            .markEmailFailed(held.id, hash)
+            .catch(() => undefined);
         throw e;
       }
       // Tied to this email's token: if the seat was cancelled and booked again meanwhile, the
@@ -281,8 +423,24 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
   try {
     // Public ------------------------------------------------------------------
     if (path === '/api/public' && method === 'GET') {
-      const [event, reserved] = await Promise.all([db().currentEvent(), db().reservedCount()]);
-      return json(200, { event, reserved, banks: deps.banks });
+      const [event, reserved, upcoming] = await Promise.all([
+        db().currentEvent(),
+        db().reservedCount(),
+        // Optional extra: if it fails, the gathering and seat count still load.
+        db()
+          .upcomingAnnouncements(lagosDay(new Date()), 3)
+          .catch((e: unknown) => {
+            log('Could not load upcoming announcements', e);
+            return null;
+          }),
+      ]);
+      return json(200, {
+        event,
+        reserved,
+        banks: deps.banks,
+        // null (not []) when the list could not be read, so a page that has it keeps it.
+        upcoming: upcoming ? upcoming.map(publicAnnouncement) : null,
+      });
     }
 
     if (path === '/api/reserve' && method === 'POST') {
@@ -491,6 +649,161 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
       if (!saved.ok)
         return fail(400, `Capacity cannot be below the ${saved.reserved} seats already reserved.`);
       return json(200, { event: saved.event });
+    }
+
+    if (path === '/api/admin/announcements' && method === 'GET') {
+      requireAdmin();
+      const [announcements, all, booked, imported] = await Promise.all([
+        db().listAnnouncements(),
+        db().updatesAudience('all'),
+        db().updatesAudience('booked'),
+        db().updatesAudience('imported'),
+      ]);
+      return json(200, {
+        announcements,
+        audience: all.length,
+        counts: { all: all.length, booked: booked.length, imported: imported.length },
+        testTo: deps.testEmail ?? '',
+        dailyLimit: deps.dailyLimit ?? DAILY_LIMIT,
+        email: deps.mailer ? deps.mailer.kind : null,
+      });
+    }
+
+    if (path === '/api/admin/audience' && method === 'GET') {
+      requireAdmin();
+      return json(200, { people: await db().updatesAudience('all') });
+    }
+
+    if (path === '/api/admin/contacts/import' && method === 'POST') {
+      requireAdmin();
+      const raw = await readImport(req);
+      const label =
+        String(field(raw, 'label') ?? '')
+          .trim()
+          .slice(0, 80) || 'Imported';
+      const list = field(raw, 'people');
+      if (!Array.isArray(list) || list.length === 0) return fail(400, 'No people to import.');
+      if (list.length > MAX_IMPORT)
+        return fail(400, `Import up to ${MAX_IMPORT.toLocaleString('en-GB')} people at a time.`);
+      const seen = new Set<string>();
+      const people: { name: string; email: string }[] = [];
+      let invalid = 0;
+      for (const p of list) {
+        const email = String(field(p, 'email') ?? '')
+          .trim()
+          .toLowerCase();
+        const name = String(field(p, 'name') ?? '')
+          .trim()
+          .slice(0, 120);
+        if (!EMAIL_RE.test(email) || email.length > 254) invalid++;
+        else if (!seen.has(email)) {
+          seen.add(email);
+          people.push({ name, email });
+        }
+      }
+      if (!people.length) return fail(400, 'None of the rows has a valid email address.');
+      // A random key the page gives every batch of one import; anything else is ignored.
+      const rawKey = String(field(raw, 'importKey') ?? '');
+      const importKey = /^[A-Za-z0-9-]{16,64}$/.test(rawKey) ? rawKey : null;
+      const result = await db().importContacts(people, label, importKey);
+      return json(200, { ...result, invalid });
+    }
+
+    if (path === '/api/admin/announcements/test' && method === 'POST') {
+      requireAdmin();
+      const body = await readJson(req);
+      const fields = validAnnouncement(body);
+      const to = String(field(body, 'to') ?? '').trim();
+      if (!EMAIL_RE.test(to)) return fail(400, 'Enter an email address for the test.');
+      if (!deps.mailer) return fail(503, 'Email is not set up yet, so no test can be sent.');
+      const email = announcementEmail({
+        announcement: toContent(fields),
+        name: 'Organiser',
+        email: to,
+        siteUrl,
+        unsubscribeUrl: `${siteUrl}/#/unsubscribe/test`,
+      });
+      try {
+        await deps.mailer.send({ ...email, subject: `[Test] ${email.subject}` });
+      } catch (e) {
+        log('Test announcement failed', e);
+        return fail(
+          502,
+          'The test email could not be sent. Check the email settings and try again.',
+        );
+      }
+      return json(200, { ok: true });
+    }
+
+    // The email preferences page: who the link is for (partly hidden), and on/off.
+    if (path === '/api/preferences' && method === 'POST') {
+      const body = await readJson(req);
+      const token = String(field(body, 'token') ?? '');
+      const action = field(body, 'action');
+      if (!TOKEN_RE.test(token)) return fail(404, 'This link isn’t working.');
+      if (action === 'unsubscribe') await db().unsubscribe(token);
+      else if (action === 'resubscribe') await db().resubscribe(token);
+      const found = await db().subscriptionByToken(token);
+      if (!found) return fail(404, 'This link isn’t working.');
+      return json(200, { email: maskEmail(found.email), subscribed: found.subscribed });
+    }
+
+    if (path === '/api/unsubscribe' && method === 'POST') {
+      // From the unsubscribe page (JSON) or a mail app's one-click button (?t=…, form body).
+      let token = url.searchParams.get('t') ?? '';
+      if (!token && (req.headers.get('content-type') ?? '').includes('application/json'))
+        token = String(field(await readJson(req), 'token') ?? '');
+      if (!TOKEN_RE.test(token)) return fail(404, 'This unsubscribe link isn’t working.');
+      const email = await db().unsubscribe(token);
+      if (!email) return fail(404, 'This unsubscribe link isn’t working.');
+      return json(200, { ok: true });
+    }
+
+    if (path === '/api/admin/announcements' && method === 'POST') {
+      requireAdmin();
+      const created = await db().createAnnouncement(validAnnouncement(await readJson(req)));
+      return json(201, { announcement: created });
+    }
+
+    const annMatch = /^\/api\/admin\/announcements\/(\d+)(\/publish)?$/.exec(path);
+    if (annMatch) {
+      requireAdmin();
+      const id = Number(annMatch[1]);
+      if (!annMatch[2] && method === 'PUT') {
+        const saved = await db().updateAnnouncement(id, validAnnouncement(await readJson(req)));
+        if (!saved) return fail(404, 'Announcement not found.');
+        return json(200, { announcement: saved });
+      }
+      if (!annMatch[2] && method === 'DELETE') {
+        if (!(await db().deleteDraftAnnouncement(id)))
+          return fail(400, 'Only a draft can be deleted.');
+        return json(200, { ok: true });
+      }
+      if (annMatch[2] && method === 'POST') {
+        const scope = field(await readJson(req), 'audience');
+        if (!AUDIENCE_SCOPES.includes(scope as AudienceScope))
+          return fail(400, 'Choose who to send it to.');
+        const published = await db().publishAnnouncement(id, scope as AudienceScope);
+        if (!published) return fail(400, 'This announcement is already published.');
+        // The emails are queued. Send a first batch now; the scheduled sender does the rest,
+        // within the daily limit.
+        if (deps.mailer) {
+          const mailer = deps.mailer;
+          deps.defer(
+            processOutbox({
+              db: db(),
+              mailer,
+              siteUrl,
+              limit: 10,
+              dailyLimit: deps.dailyLimit ?? DAILY_LIMIT,
+              // Stay well inside the function's time limit; the scheduled sender does the rest.
+              timeBudgetMs: 8_000,
+              log,
+            }).catch((e: unknown) => log('First announcement batch failed', e)),
+          );
+        }
+        return json(200, { announcement: published });
+      }
     }
 
     const statusMatch = /^\/api\/admin\/contributions\/(\d+)$/.exec(path);

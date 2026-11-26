@@ -23,6 +23,9 @@ export const ICON = {
     '<rect x="3.5" y="8" width="17" height="12.5" rx="2"/><path d="M12 8v12.5M3.5 12.5h17M12 8C10.5 4 6.5 4 7 6.5S12 8 12 8zm0 0c1.5-4 5.5-4 5-1.5S12 8 12 8z"/>',
   ),
   back: svg('<path d="M19 12H5M11 6l-6 6 6 6"/>'),
+  megaphone: svg(
+    '<path d="M3.5 10.5v3a1 1 0 0 0 1 1H7l5.5 4.5v-14L7 9.5H4.5a1 1 0 0 0-1 1z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a7.5 7.5 0 0 1 0 11"/>',
+  ),
   out: svg('<path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10"/>'),
 };
 
@@ -52,15 +55,22 @@ export function seatWall(): string {
 
 const logo = (): string => `<img class="logo" src="${IMG.logo}" alt="Believers Tech Network">`;
 
+const MENU_OPEN = svg('<path d="M4 7h16M4 12h16M4 17h10"/>');
+const MENU_CLOSE = svg('<path d="M6 6l12 12M18 6L6 18"/>');
+
 /** The top bar. It sits on the cloth of the section that follows it. */
 export function nav(): string {
   const cur = (p: Route): string => (S.page === p ? 'aria-current="page"' : '');
+  // Shown only while another BTN event is coming up; jumps to it on the home page.
+  const events = S.upcoming.length
+    ? '<button data-action="events" type="button">Events</button>'
+    : '';
   return `${loadBanner()}<header class="nav">
   <button class="brand" data-route="home" type="button" aria-label="Just Pray, home">${logo()}<span class="sep"></span><span class="wm">Just Pray</span></button>
-  <nav class="nav-links" aria-label="Main"><button data-route="home" ${cur('home')} type="button">About</button><button data-route="register" ${cur('register')} type="button">Next gathering</button><button data-route="support" ${cur('support')} type="button">Support</button></nav>
-  <button class="btn gold small" data-route="register" type="button">Reserve a seat</button>
-  <button class="menu-btn" data-action="menu" type="button" aria-expanded="${S.menu}" aria-controls="mnav">${S.menu ? 'Close' : 'Menu'}</button>
-  <nav id="mnav" class="mobile-nav ${S.menu ? 'open' : ''}" aria-label="Mobile"><button data-route="home" type="button">About</button><button data-route="register" type="button">Reserve a seat</button><button data-route="support" type="button">Support</button><button data-action="share" type="button">Share</button></nav></header>`;
+  <nav class="nav-links" aria-label="Main"><button data-route="home" ${cur('home')} type="button">About</button><button data-route="register" ${cur('register')} type="button">Next gathering</button>${events}<button data-route="support" ${cur('support')} type="button">Support</button></nav>
+  <button class="btn primary small" data-route="register" type="button">Reserve a seat</button>
+  <button class="menu-btn" data-action="menu" type="button" aria-expanded="${S.menu}" aria-controls="mnav">${S.menu ? MENU_CLOSE : MENU_OPEN}<span>${S.menu ? 'Close' : 'Menu'}</span></button>
+  <nav id="mnav" class="mobile-nav ${S.menu ? 'open' : ''}" aria-label="Mobile"><button data-route="home" type="button">About</button>${events}<button data-route="support" type="button">Support</button><button data-action="share" type="button">Share</button><button class="btn primary" data-route="register" type="button">Reserve a seat ${ICON.arrow}</button></nav></header>`;
 }
 
 export const footer = (): string =>

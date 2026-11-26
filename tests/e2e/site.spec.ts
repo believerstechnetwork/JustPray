@@ -322,3 +322,274 @@ test('no horizontal scroll on the home page', async ({ page }) => {
   );
   expect(overflow).toBeLessThanOrEqual(1);
 });
+
+test('organiser imports people from a CSV file and sees them on the mailing list', async ({
+  page,
+}) => {
+  const tag = Math.random().toString(36).slice(2, 8);
+  await signIn(page);
+  await page.getByRole('button', { name: 'Announcements', exact: true }).click();
+  await page.getByRole('button', { name: 'Import from Excel' }).click();
+  await page.locator('#imp-file').setInputFiles({
+    name: 'conference.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from(
+      `Name,Email\nImported ${tag},imp-${tag}@example.com\nNo Email,\nTwice,imp-${tag}@example.com\n`,
+    ),
+  });
+  await expect(page.getByRole('heading', { name: 'Check the list' })).toBeVisible();
+  await expect(page.getByText('1 person with a valid email')).toBeVisible();
+  await page.getByLabel('Label for this list').fill(`Conference ${tag}`);
+  await page.getByRole('button', { name: 'Import 1 person' }).click();
+  await expect(page.getByRole('heading', { name: 'Import complete' })).toBeVisible();
+  await expect(page.locator('.imp-sum')).toContainText('1 added to the mailing list');
+  await page.getByRole('button', { name: 'See the mailing list' }).click();
+  const row = page.getByRole('row').filter({ hasText: `imp-${tag}@example.com` });
+  await expect(row).toContainText(`Conference ${tag}`);
+});
+
+test('while an import is sending, the panel cannot be left, swapped or submitted again', async ({
+  page,
+}) => {
+  await signIn(page);
+  await page.getByRole('button', { name: 'Announcements', exact: true }).click();
+  await page.getByRole('button', { name: 'Import from Excel' }).click();
+  await page.locator('#imp-file').setInputFiles({
+    name: 'slow.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from('Name,Email\nSlow One,slow1@example.com\n'),
+  });
+  // The import request is held until the checks below are done.
+  let release: () => void = () => {};
+  const held = new Promise<void>((r) => (release = r));
+  let requests = 0;
+  await page.route('**/api/admin/contacts/import', async (route) => {
+    requests++;
+    await held;
+    await route.fulfill({ json: { added: 1, existing: 0, unsubscribed: 0, invalid: 0 } });
+  });
+  await page.getByRole('button', { name: 'Import 1 person' }).click();
+  await expect(page.getByRole('button', { name: 'Importing…' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Back to announcements' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Choose another file' })).toBeDisabled();
+  // Pressing Enter in the label field does not send it again.
+  await page.getByLabel('Label for this list').press('Enter');
+  // Nor does leaving through the tabs: Announcements comes back to this import, still sending,
+  // with no file picker for another one.
+  await page.getByRole('button', { name: 'Announcements', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Importing…' })).toBeDisabled();
+  await expect(page.locator('#imp-file')).toHaveCount(0);
+  await page.locator('[data-tab]').first().click();
+  await page.getByRole('button', { name: 'Announcements', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Importing…' })).toBeDisabled();
+  await expect(page.locator('#imp-file')).toHaveCount(0);
+  release();
+  await expect(page.getByRole('heading', { name: 'Import complete' })).toBeVisible();
+  expect(requests).toBe(1);
+  await page.unroute('**/api/admin/contacts/import');
+});
+
+test('an import that stops part way keeps what it saved, and Import again sends the rest', async ({
+  page,
+}) => {
+  const tag = Math.random().toString(36).slice(2, 8);
+  // Long names and addresses, so the list needs more than one request.
+  const rows = Array.from(
+    { length: 5000 },
+    (_, i) => `${'N'.repeat(120)},${tag}${i}${'x'.repeat(220)}@example.com`,
+  );
+  await signIn(page);
+  await page.getByRole('button', { name: 'Announcements', exact: true }).click();
+  await page.getByRole('button', { name: 'Import from Excel' }).click();
+  await page.locator('#imp-file').setInputFiles({
+    name: 'big.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from(`Name,Email\n${rows.join('\n')}\n`),
+  });
+  await expect(page.getByText('5,000 people with a valid email')).toBeVisible();
+
+  // The import requests are answered here, so the shared test server keeps none of these people.
+  // The first request is saved; the second is lost; after that every request is saved.
+  let requests = 0;
+  const sentEmails: string[] = [];
+  const keys = new Set<string>();
+  await page.route('**/api/admin/contacts/import', async (route) => {
+    const body = route.request().postDataJSON() as {
+      people: { email: string }[];
+      importKey: string;
+    };
+    keys.add(body.importKey);
+    if (++requests === 2) return route.abort();
+    const batch = body.people;
+    sentEmails.push(...batch.map((p) => p.email));
+    await route.fulfill({
+      json: { added: batch.length, existing: 0, unsubscribed: 0, invalid: 0 },
+    });
+  });
+  await page.getByRole('button', { name: 'Import 5,000 people' }).click();
+  const err = page.locator('form[data-form="import"] .err');
+  await expect(err).toContainText('people are saved; the import stopped before the rest');
+  const saved = Number(
+    (await err.textContent())?.match(/^At least ([\d,]+) of 5,000/)?.[1]?.replace(/,/g, ''),
+  );
+  expect(saved).toBeGreaterThan(0);
+  expect(saved).toBeLessThan(5000);
+  await expect(page.getByLabel('Label for this list')).toHaveAttribute('readonly', '');
+
+  // Import again sends only the rest; the result counts everyone as added, none as already there.
+  await page
+    .getByRole('button', {
+      name: `Import the other ${(5000 - saved).toLocaleString('en-GB')} people`,
+    })
+    .click();
+  await expect(page.getByRole('heading', { name: 'Import complete' })).toBeVisible();
+  await expect(page.locator('.imp-sum')).toContainText('5,000 added to the mailing list');
+  await expect(page.locator('.imp-sum')).not.toContainText('already on the list');
+  // Everyone was sent exactly once, in order.
+  expect(sentEmails).toEqual(rows.map((r) => r.split(',')[1]));
+  // Every request of this import, the retry included, carries the same import key.
+  expect(keys.size).toBe(1);
+  expect([...keys][0]).toMatch(/^[A-Za-z0-9-]{16,64}$/);
+  await page.unroute('**/api/admin/contacts/import');
+});
+
+test('organiser previews, tests and publishes an announcement that then shows on the home page', async ({
+  page,
+}) => {
+  const tag = Math.random().toString(36).slice(2, 6);
+  const title = `BTN Retreat ${tag}`;
+  await signIn(page);
+  // Someone on the imported list, so there is at least one person to send to.
+  const added = await page.request.post('/api/admin/contacts/import', {
+    data: { label: 'e2e', people: [{ name: 'E2E Person', email: `e2e-${tag}@example.com` }] },
+  });
+  expect(added.ok()).toBe(true);
+  await page.getByRole('button', { name: 'Announcements', exact: true }).click();
+  await page.getByRole('button', { name: 'New announcement' }).click();
+  await page.getByLabel('Title', { exact: true }).fill(title);
+  // Today in Lagos: the earliest date the home page lists, and among same-day events the newest
+  // comes first, so this card is always among the three shown whatever earlier runs left behind.
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date());
+  await page.getByLabel('Date', { exact: true }).fill(today);
+  await page.getByLabel('Venue to be announced').check();
+  await page.getByLabel('Theme to be announced').check();
+  await page.getByLabel('Summary', { exact: true }).fill('A weekend of prayer.');
+  await page.getByLabel('Subject', { exact: true }).fill(`Save the date: ${title}`);
+  await page.getByLabel('Message', { exact: true }).fill('Hi {first name},\n\nJoin us.');
+  // The live preview is the email itself.
+  await expect(
+    page.frameLocator('iframe.mail').getByRole('heading', { name: title }),
+  ).toBeVisible();
+  await expect(page.frameLocator('iframe.mail').getByText('Hi Ada,')).toBeVisible();
+  // The preview is sandboxed: nothing in it can run script in the organiser page.
+  const sandbox = await page.locator('iframe.mail').getAttribute('sandbox');
+  expect(sandbox).not.toBeNull();
+  expect(sandbox).not.toContain('allow-scripts');
+  // It is still sized to its content: the page can read the frame and sets its height.
+  await expect(page.locator('iframe.mail')).toHaveAttribute('style', /height: \d+px/);
+
+  await page.getByRole('button', { name: 'Send test' }).click();
+  await expect(page.getByText(/Test sent to organisers@example.com/)).toBeVisible();
+
+  await page.getByRole('button', { name: 'Publish…' }).click();
+  const dialog = page.getByRole('dialog');
+  // Keyboard users land in the dialog, and toggling a list keeps their place.
+  await expect(page.locator('#ann-c-h')).toBeFocused();
+  // Shift+Tab from the heading wraps to the dialog's last control, never the form behind it.
+  await page.keyboard.press('Shift+Tab');
+  await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(dialog.getByLabel(/People who booked a seat/)).toBeFocused();
+  await dialog.getByLabel(/People who booked a seat/).focus();
+  await page.keyboard.press('Space');
+  await expect(dialog.getByLabel(/People who booked a seat/)).toBeFocused();
+  await page.keyboard.press('Space');
+  await dialog.getByLabel(/People who booked a seat/).uncheck();
+  await dialog.getByLabel(/People imported from Excel/).uncheck();
+  await expect(dialog.getByRole('button', { name: 'Choose who to send to' })).toBeDisabled();
+  await dialog.getByLabel(/People imported from Excel/).check();
+  await dialog.getByRole('button', { name: /Publish and email/ }).click();
+  await expect(page.getByText(title)).toBeVisible();
+
+  await page.goto('/#/home');
+  await page.reload();
+  const card = page.locator('.up-card').filter({ hasText: title });
+  await expect(card).toBeVisible();
+  await expect(card).toContainText('Theme to be announced');
+  await expect(card).toContainText('Venue to be announced');
+
+  // The header's Events link jumps to the section from any page (behind Menu on phones).
+  await page.goto('/#/support');
+  if (test.info().project.name === 'mobile') {
+    await page.getByRole('button', { name: 'Menu' }).click();
+    await page
+      .getByRole('navigation', { name: 'Mobile' })
+      .getByRole('button', { name: 'Events' })
+      .click();
+  } else {
+    await page
+      .getByRole('navigation', { name: 'Main' })
+      .getByRole('button', { name: 'Events' })
+      .click();
+  }
+  await expect(page).toHaveURL(/#\/home$/);
+  await expect(page.locator('#events-h')).toBeFocused();
+  await expect(page.locator('#events-h')).toBeInViewport();
+});
+
+test('the email preferences page unsubscribes, and can undo it', async ({ page }) => {
+  const tag = Math.random().toString(36).slice(2, 8);
+  const email = `prefs-${tag}@example.com`;
+  await signIn(page);
+  await page.request.post('/api/admin/contacts/import', {
+    data: { label: 'e2e', people: [{ name: 'Pref Person', email }] },
+  });
+  await page.getByRole('button', { name: 'Announcements', exact: true }).click();
+  await page.getByRole('button', { name: 'New announcement' }).click();
+  await page.getByLabel('Title', { exact: true }).fill(`Prefs ${tag}`);
+  await page.getByLabel('Date', { exact: true }).fill('2099-10-10');
+  await page.getByLabel('Venue', { exact: true }).fill('Online');
+  await page.getByLabel('Summary', { exact: true }).fill('A test.');
+  await page.getByLabel('Subject', { exact: true }).fill(`Prefs ${tag}`);
+  await page.getByLabel('Message', { exact: true }).fill('Hi {first name},');
+  await page.getByRole('button', { name: 'Publish…' }).click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: /Publish and email/ })
+    .click();
+
+  // Follow the link in the email this person received.
+  let link = '';
+  await expect
+    .poll(async () => {
+      const sent = (await (await page.request.get('/api/dev/mail')).json()) as {
+        to: string;
+        text: string;
+      }[];
+      link =
+        /#\/unsubscribe\/[A-Za-z0-9_-]+/.exec(sent.find((m) => m.to === email)?.text ?? '')?.[0] ??
+        '';
+      return link;
+    })
+    .not.toBe('');
+  await page.goto(`/${link}`);
+  await page.reload();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Email preferences');
+  await expect(page.getByText(`pr•••@example.com`)).toBeVisible();
+  await expect(page.locator('.pill')).toHaveText('On');
+  await page.getByRole('button', { name: 'Unsubscribe' }).click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('You’re unsubscribed.');
+  await expect(page.locator('.pill')).toHaveText('Off');
+  await page.getByRole('button', { name: 'Resubscribe' }).click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Welcome back.');
+  await expect(page.locator('.pill')).toHaveText('On');
+});
+
+test('a broken unsubscribe link says so', async ({ page }) => {
+  await page.goto('/#/unsubscribe/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+  await page.reload();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('This link isn’t working.');
+  await page.goto('/#/unsubscribe');
+  await page.reload();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('This link isn’t working.');
+});

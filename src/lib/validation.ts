@@ -15,7 +15,9 @@ export const MIN_CONTRIBUTION = CONTRIBUTION_LIMITS.NGN.min;
 /** Same rule as the phone input's `pattern` attribute. */
 export const PHONE_PATTERN = '[+]?[0-9][0-9 ]{8,18}';
 const PHONE_RE = new RegExp(`^${PHONE_PATTERN}$`);
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/** A bare email address: one mailbox, with no display name, angle brackets, quotes or list
+ *  separators, so "Ada <ada@example.com>" and "ada@example.com" can never be two recipients. */
+export const EMAIL_RE = /^[^\s@<>()[\]\\,;:"]+@[^\s@<>()[\]\\,;:"]+\.[^\s@<>()[\]\\,;:"]+$/;
 
 export interface RegistrationInput {
   name: string;

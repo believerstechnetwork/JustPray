@@ -354,6 +354,115 @@ describe('SupabaseDb', () => {
     expect(await db.eventById(4)).toBeNull();
   });
 
+  it('publishes, claims, finishes and imports through the database functions', async () => {
+    const { db, seen } = fakeSupabase([
+      {
+        body: [
+          { id: 5, title: 'T', date: '2027-09-09', status: 'published', audience: 'imported' },
+        ],
+      },
+      {
+        body: [
+          {
+            id: 9,
+            announcement_id: 5,
+            name: 'Ada',
+            email: 'a@b.co',
+            unsub_token: 'tok',
+            claim_token: 'ct',
+          },
+        ],
+      },
+      { body: true },
+      { body: null },
+      { body: [{ added: 2, existing: 1, unsubscribed: 0 }] },
+      { body: 'a@b.co' },
+    ]);
+    expect(await db.publishAnnouncement(5, 'imported')).toMatchObject({
+      id: 5,
+      audience: 'imported',
+    });
+    expect(seen[0]).toMatchObject({
+      path: '/rest/v1/rpc/publish_announcement',
+      body: { p_id: 5, p_scope: 'imported' },
+    });
+    expect(await db.claimOutbox(20, 350)).toEqual([
+      {
+        id: 9,
+        announcementId: 5,
+        name: 'Ada',
+        email: 'a@b.co',
+        unsubToken: 'tok',
+        claimToken: 'ct',
+      },
+    ]);
+    expect(seen[1]?.body).toEqual({ p_limit: 20, p_daily: 350 });
+    expect(await db.beginOutbox(9, 'ct')).toBe(true);
+    expect(seen[2]).toMatchObject({
+      path: '/rest/v1/rpc/begin_announcement_send',
+      body: { p_id: 9, p_token: 'ct' },
+    });
+    await db.finishOutbox(9, 'ct', 'retry', 'smtp');
+    expect(seen[3]).toMatchObject({
+      path: '/rest/v1/rpc/finish_announcement_send',
+      body: { p_id: 9, p_token: 'ct', p_outcome: 'retry', p_error: 'smtp' },
+    });
+    expect(
+      await db.importContacts([{ name: 'A', email: 'a@b.co' }], 'Sheet', 'key-0123456789abcdef'),
+    ).toEqual({
+      added: 2,
+      existing: 1,
+      unsubscribed: 0,
+    });
+    expect(seen[4]?.body).toEqual({
+      p_people: [{ name: 'A', email: 'a@b.co' }],
+      p_label: 'Sheet',
+      p_import: 'key-0123456789abcdef',
+    });
+    expect(await db.unsubscribe('tok')).toBe('a@b.co');
+  });
+
+  it('reads every upcoming event in pages before ordering them for the home page', async () => {
+    const row = (id: number, date: string, end: string | null = null) => ({
+      id,
+      title: `E${id}`,
+      date,
+      end_date: end,
+      status: 'published',
+    });
+    // The server caps the first page at 100 events already under way; today's event is on the
+    // next page, and an empty page ends the reading.
+    const running = Array.from({ length: 100 }, (_, i) => row(i + 1, '2027-01-01', '2027-01-30'));
+    const { db, seen } = fakeSupabase([
+      { body: running },
+      { body: [row(501, '2027-01-05')] },
+      { body: [] },
+    ]);
+    const list = await db.upcomingAnnouncements('2027-01-05', 3);
+    // Today's event comes first, even though it was on a later page; then the newest running ones.
+    expect(list.map((a) => a.id)).toEqual([501, 100, 99]);
+    expect(seen).toHaveLength(3);
+    expect(seen[1]?.path).toContain('/rest/v1/announcements');
+    expect(seen[1]?.query).toContain('id=gt.100');
+  });
+
+  it('reads the whole mailing list a page at a time, by email', async () => {
+    const page = (from: number, count: number) =>
+      Array.from({ length: count }, (_, i) => ({
+        name: 'N',
+        email: `p${String(from + i).padStart(5, '0')}@x.co`,
+        source: 'Sheet',
+      }));
+    const { db, seen } = fakeSupabase([
+      { body: page(0, 1000) },
+      { body: page(1000, 3) },
+      { body: [] },
+    ]);
+    expect(await db.updatesAudience('imported')).toHaveLength(1003);
+    expect(seen[0]?.body).toEqual({ p_scope: 'imported', p_after: '', p_limit: 1000 });
+    expect(seen[1]?.body).toMatchObject({ p_after: 'p00999@x.co' });
+  });
+
   it('maps contribution rows', async () => {
     const row = {
       id: 2,

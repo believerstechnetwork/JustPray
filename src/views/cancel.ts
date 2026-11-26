@@ -26,9 +26,9 @@ export function cancel(): string {
     } else if (info.status === 'cancelled') {
       text = c.justCancelled
         ? `<h1>Seat cancelled.</h1><p class="lede">Thank you for letting us know, ${first}. Seat ${info.seat} is free for someone else, and we’ve sent you a note by email.</p>
-  <div class="actions">${btn('Reserve again', 'register', 'gold')}<button class="link" data-route="home" type="button">Back to home</button></div>`
+  <div class="actions">${btn('Reserve again', 'register', 'primary')}<button class="link" data-route="home" type="button">Back to home</button></div>`
         : `<h1>Already cancelled.</h1><p class="lede">Seat ${info.seat} for ${date} was cancelled and is free for someone else.</p>
-  <div class="actions">${btn('Reserve again', 'register', 'gold')}<button class="link" data-route="home" type="button">Back to home</button></div>`;
+  <div class="actions">${btn('Reserve again', 'register', 'primary')}<button class="link" data-route="home" type="button">Back to home</button></div>`;
     } else {
       text = `<h1>Cancelling has closed.</h1><p class="lede">Seat ${info.seat} was for ${date}, which has passed or begun.</p>
   <div class="actions">${btn('See the next gathering', 'register', 'white')}</div>`;
