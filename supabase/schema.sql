@@ -159,6 +159,9 @@ create table if not exists public.contacts (
   source text not null default 'Imported',
   created_at timestamptz not null default now()
 );
+-- The import that added each person: a random key the organiser's page gives all the batches of
+-- one import, so a batch sent again after its reply was lost still counts its people as added.
+alter table public.contacts add column if not exists import_key text;
 
 -- The outbox: one row per person per published announcement, sent in small batches.
 create table if not exists public.announcement_sends (
@@ -506,7 +509,13 @@ $$;
 
 -- Add people from an Excel import. p_people is a JSON array of {name, email}. Counts:
 -- added (new), existing (already on the list) and unsubscribed (not added back).
-create or replace function public.import_contacts(p_people jsonb, p_label text)
+-- Replaced by the version below, which also takes the import's key.
+drop function if exists public.import_contacts(jsonb, text);
+create or replace function public.import_contacts(
+  p_people jsonb,
+  p_label text,
+  p_import text default null
+)
 returns table (added integer, existing integer, unsubscribed integer)
 language plpgsql
 set search_path = public
@@ -514,7 +523,7 @@ as $$
 declare
   total integer;
   blocked integer;
-  inserted integer;
+  n_added integer;
 begin
   -- Each address is checked against the unsubscribe list once, here, and every count below
   -- comes from that one check, so a change made meanwhile cannot make the totals disagree.
@@ -528,12 +537,20 @@ begin
       where coalesce(trim(x->>'email'), '') <> ''
     ) d;
   select count(*), count(*) filter (where i.blocked) into total, blocked from import_in i;
-  insert into public.contacts (name, email, source)
-  select i.name, i.email, p_label from import_in i
+  insert into public.contacts (name, email, source, import_key)
+  select i.name, i.email, p_label, p_import from import_in i
   where not i.blocked
   on conflict (email) do nothing;
-  get diagnostics inserted = row_count;
-  return query select inserted, total - inserted - blocked, blocked;
+  get diagnostics n_added = row_count;
+  -- With a key, everyone this import added counts as added, including people saved by an earlier
+  -- try of this batch whose reply was lost. Counted after the insert, which waits for such a try
+  -- still in progress, so this new statement sees its rows.
+  if p_import is not null then
+    select count(*) into n_added
+    from import_in i join public.contacts c on c.email = i.email
+    where not i.blocked and c.import_key = p_import;
+  end if;
+  return query select n_added, total - n_added - blocked, blocked;
 end;
 $$;
 
@@ -543,7 +560,7 @@ revoke execute on function public.claim_announcement_sends(integer, integer) fro
 revoke execute on function public.begin_announcement_send(bigint, text) from public, anon, authenticated;
 revoke execute on function public.finish_announcement_send(bigint, text, text, text) from public, anon, authenticated;
 revoke execute on function public.unsubscribe_by_token(text) from public, anon, authenticated;
-revoke execute on function public.import_contacts(jsonb, text) from public, anon, authenticated;
+revoke execute on function public.import_contacts(jsonb, text, text) from public, anon, authenticated;
 revoke execute on function public.resubscribe_by_token(text) from public, anon, authenticated;
 revoke execute on function public.subscription_by_token(text) from public, anon, authenticated;
 grant execute on function public.resubscribe_by_token(text) to service_role;
@@ -554,7 +571,7 @@ grant execute on function public.claim_announcement_sends(integer, integer) to s
 grant execute on function public.begin_announcement_send(bigint, text) to service_role;
 grant execute on function public.finish_announcement_send(bigint, text, text, text) to service_role;
 grant execute on function public.unsubscribe_by_token(text) to service_role;
-grant execute on function public.import_contacts(jsonb, text) to service_role;
+grant execute on function public.import_contacts(jsonb, text, text) to service_role;
 
 alter table public.events enable row level security;
 alter table public.reservations enable row level security;

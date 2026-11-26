@@ -371,9 +371,15 @@ test('an import that stops part way keeps what it saved, and Import again sends 
   // The first request is saved; the second is lost; after that every request is saved.
   let requests = 0;
   const sentEmails: string[] = [];
+  const keys = new Set<string>();
   await page.route('**/api/admin/contacts/import', async (route) => {
+    const body = route.request().postDataJSON() as {
+      people: { email: string }[];
+      importKey: string;
+    };
+    keys.add(body.importKey);
     if (++requests === 2) return route.abort();
-    const batch = (route.request().postDataJSON() as { people: { email: string }[] }).people;
+    const batch = body.people;
     sentEmails.push(...batch.map((p) => p.email));
     await route.fulfill({
       json: { added: batch.length, existing: 0, unsubscribed: 0, invalid: 0 },
@@ -381,9 +387,9 @@ test('an import that stops part way keeps what it saved, and Import again sends 
   });
   await page.getByRole('button', { name: 'Import 5,000 people' }).click();
   const err = page.locator('form[data-form="import"] .err');
-  await expect(err).toContainText('people were saved, then the import stopped');
+  await expect(err).toContainText('people are saved; the import stopped before the rest');
   const saved = Number(
-    (await err.textContent())?.match(/^([\d,]+) of 5,000/)?.[1]?.replace(/,/g, ''),
+    (await err.textContent())?.match(/^At least ([\d,]+) of 5,000/)?.[1]?.replace(/,/g, ''),
   );
   expect(saved).toBeGreaterThan(0);
   expect(saved).toBeLessThan(5000);
@@ -400,6 +406,9 @@ test('an import that stops part way keeps what it saved, and Import again sends 
   await expect(page.locator('.imp-sum')).not.toContainText('already on the list');
   // Everyone was sent exactly once, in order.
   expect(sentEmails).toEqual(rows.map((r) => r.split(',')[1]));
+  // Every request of this import, the retry included, carries the same import key.
+  expect(keys.size).toBe(1);
+  expect([...keys][0]).toMatch(/^[A-Za-z0-9-]{16,64}$/);
   await page.unroute('**/api/admin/contacts/import');
 });
 

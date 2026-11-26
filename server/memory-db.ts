@@ -41,6 +41,8 @@ export class MemoryDb implements Db {
   unsubscribed = new Set<string>();
   /** People added from an Excel import. */
   contacts: AudienceMember[] = [];
+  /** The import that added each contact, by email (see importContacts). */
+  private importKeys = new Map<string, string>();
   outbox: {
     id: number;
     announcementId: number;
@@ -466,6 +468,7 @@ export class MemoryDb implements Db {
   async importContacts(
     people: { name: string; email: string }[],
     label: string,
+    importKey: string | null = null,
   ): Promise<{ added: number; existing: number; unsubscribed: number }> {
     // Imported membership does not depend on bookings: someone who booked is still added, so an
     // announcement sent to imported people only reaches everyone in the sheet.
@@ -477,9 +480,13 @@ export class MemoryDb implements Db {
       if (seen.has(p.email)) continue;
       seen.add(p.email);
       if (this.unsubscribed.has(p.email)) result.unsubscribed++;
-      else if (onList.has(p.email)) result.existing++;
-      else {
+      else if (onList.has(p.email)) {
+        // Added by this same import already (a batch sent again after its reply was lost).
+        if (importKey && this.importKeys.get(p.email) === importKey) result.added++;
+        else result.existing++;
+      } else {
         this.contacts.push({ name: p.name, email: p.email, source: label });
+        if (importKey) this.importKeys.set(p.email, importKey);
         onList.add(p.email);
         result.added++;
       }

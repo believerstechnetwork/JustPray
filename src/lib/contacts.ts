@@ -179,28 +179,38 @@ export function importBatches(people: Contact[], maxChars = IMPORT_BATCH_CHARS):
   return batches;
 }
 
-/** How much of a list is saved: the first `done` people, with the counts the server gave them. */
+/** How much of a list is saved: the first `done` people, with the counts the server gave them.
+ *  `key` goes with every batch of this import, so if a batch is saved but its reply is lost, the
+ *  server still counts its people as added when the batch is sent again. */
 export interface ImportProgress {
+  key: string;
   done: number;
   counts: ImportOutcome;
 }
 
+const randomKey = (): string =>
+  globalThis.crypto?.randomUUID?.() ??
+  Array.from({ length: 4 }, () => Math.random().toString(36).slice(2, 10)).join('-');
+
 export const startImport = (): ImportProgress => ({
+  key: randomKey(),
   done: 0,
   counts: { added: 0, existing: 0, unsubscribed: 0, invalid: 0 },
 });
 
 /** Send the people after `progress.done` in batches, adding each saved batch to `progress` as it
  *  is saved. If a batch fails, the error is thrown and `progress` still says what was saved, so
- *  calling again with it sends only the rest and the counts are never lost or doubled. */
+ *  calling again with it sends only the rest. A batch whose reply was lost is sent again with the
+ *  same key, and the server counts the people it saved the first time as added, so the counts
+ *  are never lost or doubled. */
 export async function importInBatches(
   people: Contact[],
   progress: ImportProgress,
-  send: (batch: Contact[]) => Promise<ImportOutcome>,
+  send: (batch: Contact[], key: string) => Promise<ImportOutcome>,
   maxChars = IMPORT_BATCH_CHARS,
 ): Promise<void> {
   for (const batch of importBatches(people.slice(progress.done), maxChars)) {
-    const r = await send(batch);
+    const r = await send(batch, progress.key);
     progress.counts.added += r.added;
     progress.counts.existing += r.existing;
     progress.counts.unsubscribed += r.unsubscribed;

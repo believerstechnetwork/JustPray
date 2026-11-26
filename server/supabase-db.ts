@@ -495,9 +495,14 @@ export class SupabaseDb implements Db {
   async importContacts(
     people: { name: string; email: string }[],
     label: string,
+    importKey: string | null = null,
   ): Promise<ImportResult> {
     const rows = check(
-      await this.sb.rpc('import_contacts', { p_people: people, p_label: label }),
+      await this.sb.rpc('import_contacts', {
+        p_people: people,
+        p_label: label,
+        p_import: importKey,
+      }),
     ) as Row[];
     const r = rows[0] ?? {};
     return { added: n(r.added), existing: n(r.existing), unsubscribed: n(r.unsubscribed) };

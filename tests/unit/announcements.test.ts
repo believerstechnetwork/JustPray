@@ -285,57 +285,90 @@ describe('importing people', () => {
     expect(added).toBe(5000);
   });
 
-  it('keeps what a failed batch import saved, and a retry sends only the rest', async () => {
+  describe('an import that stops part way', () => {
+    type Counts = { added: number; existing: number; unsubscribed: number; invalid: number };
     const people = Array.from({ length: 30 }, (_, i) => ({
       name: `Person ${i}`,
       email: `p${i}@example.com`,
     }));
-    const send = async (batch: typeof people) => {
+    const send = async (batch: typeof people, key: string) => {
       const { status, data } = await call('POST', '/api/admin/contacts/import', {
         label: 'Retry',
         people: batch,
+        importKey: key,
       });
       if (status !== 200) throw new Error(`HTTP ${status}`);
-      return data as { added: number; existing: number; unsubscribed: number; invalid: number };
+      return data as Counts;
     };
     const maxChars = 400; // about 10 people a batch
-    expect(importBatches(people, maxChars).length).toBeGreaterThanOrEqual(3);
+    const done = { done: 30, counts: { added: 30, existing: 0, unsubscribed: 0, invalid: 0 } };
 
-    // The second batch fails after the first is saved.
-    const progress = startImport();
-    const sent: number[] = [];
-    let calls = 0;
-    const failSecond = async (batch: typeof people) => {
-      if (++calls === 2) throw new Error('network');
-      sent.push(batch.length);
-      return send(batch);
-    };
-    await expect(importInBatches(people, progress, failSecond, maxChars)).rejects.toThrow(
-      'network',
-    );
-    expect(progress.done).toBe(sent[0]);
-    expect(progress.counts).toEqual({
-      added: sent[0],
-      existing: 0,
-      unsubscribed: 0,
-      invalid: 0,
+    it('splits into several batches', () => {
+      expect(importBatches(people, maxChars).length).toBeGreaterThanOrEqual(3);
     });
 
-    // The retry starts after the saved people, so nobody is counted as already on the list.
-    const retried: string[] = [];
-    await importInBatches(
-      people,
-      progress,
-      (batch) => {
-        retried.push(...batch.map((p) => p.email));
-        return send(batch);
-      },
-      maxChars,
-    );
-    expect(retried).toEqual(people.slice(sent[0]).map((p) => p.email));
-    expect(progress).toEqual({
-      done: 30,
-      counts: { added: 30, existing: 0, unsubscribed: 0, invalid: 0 },
+    it('keeps what was saved before a batch failed, and a retry sends only the rest', async () => {
+      // The second batch never reaches the server.
+      const progress = startImport();
+      const sent: number[] = [];
+      let calls = 0;
+      const failSecond = async (batch: typeof people, key: string) => {
+        if (++calls === 2) throw new Error('network');
+        sent.push(batch.length);
+        return send(batch, key);
+      };
+      await expect(importInBatches(people, progress, failSecond, maxChars)).rejects.toThrow(
+        'network',
+      );
+      expect(progress.done).toBe(sent[0]);
+      expect(progress.counts).toEqual({ added: sent[0], existing: 0, unsubscribed: 0, invalid: 0 });
+
+      const retried: string[] = [];
+      await importInBatches(
+        people,
+        progress,
+        (batch, key) => {
+          retried.push(...batch.map((p) => p.email));
+          return send(batch, key);
+        },
+        maxChars,
+      );
+      expect(retried).toEqual(people.slice(sent[0]).map((p) => p.email));
+      expect(progress).toMatchObject(done);
+    });
+
+    it('counts a batch the server saved but whose reply was lost as added on the retry', async () => {
+      // The server saves the second batch, then the reply never arrives.
+      const progress = startImport();
+      let calls = 0;
+      let lost = 0;
+      const loseSecondReply = async (batch: typeof people, key: string) => {
+        const r = await send(batch, key);
+        if (++calls === 2) {
+          lost = batch.length;
+          throw new Error('network');
+        }
+        return r;
+      };
+      await expect(importInBatches(people, progress, loseSecondReply, maxChars)).rejects.toThrow(
+        'network',
+      );
+      expect(lost).toBeGreaterThan(0);
+      // The retry sends the lost batch again; its people are on the list, under this import.
+      await importInBatches(people, progress, send, maxChars);
+      expect(progress).toMatchObject(done);
+
+      // Another import of the same people does count them as already on the list.
+      const other = startImport();
+      await importInBatches(people, other, send, maxChars);
+      expect(other.counts).toEqual({ added: 0, existing: 30, unsubscribed: 0, invalid: 0 });
+    });
+
+    it('ignores a malformed import key, so the counts fall back to plain ones', async () => {
+      const first = await send(people.slice(0, 5), 'x');
+      const again = await send(people.slice(0, 5), 'x');
+      expect(first).toMatchObject({ added: 5, existing: 0 });
+      expect(again).toMatchObject({ added: 0, existing: 5 });
     });
   });
 

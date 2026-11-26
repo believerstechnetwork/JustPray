@@ -69,8 +69,8 @@ export const api = {
     call<{ event: GatheringEvent }>('PUT', 'admin/event', event),
   announcements: () => call<AnnouncementsInfo>('GET', 'admin/announcements'),
   audience: () => call<{ people: AudienceMember[] }>('GET', 'admin/audience'),
-  importContacts: (people: { name: string; email: string }[], label: string) =>
-    call<ImportOutcome>('POST', 'admin/contacts/import', { people, label }),
+  importContacts: (people: { name: string; email: string }[], label: string, importKey: string) =>
+    call<ImportOutcome>('POST', 'admin/contacts/import', { people, label, importKey }),
   testAnnouncement: (form: AnnouncementForm, to: string) =>
     call<{ ok: true }>('POST', 'admin/announcements/test', { ...form, to }),
   preferences: (token: string, action?: 'unsubscribe' | 'resubscribe') =>

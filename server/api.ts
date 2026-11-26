@@ -698,7 +698,10 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
         }
       }
       if (!people.length) return fail(400, 'None of the rows has a valid email address.');
-      const result = await db().importContacts(people, label);
+      // A random key the page gives every batch of one import; anything else is ignored.
+      const rawKey = String(field(raw, 'importKey') ?? '');
+      const importKey = /^[A-Za-z0-9-]{16,64}$/.test(rawKey) ? rawKey : null;
+      const result = await db().importContacts(people, label, importKey);
       return json(200, { ...result, invalid });
     }
 

@@ -407,12 +407,18 @@ describe('SupabaseDb', () => {
       path: '/rest/v1/rpc/finish_announcement_send',
       body: { p_id: 9, p_token: 'ct', p_outcome: 'retry', p_error: 'smtp' },
     });
-    expect(await db.importContacts([{ name: 'A', email: 'a@b.co' }], 'Sheet')).toEqual({
+    expect(
+      await db.importContacts([{ name: 'A', email: 'a@b.co' }], 'Sheet', 'key-0123456789abcdef'),
+    ).toEqual({
       added: 2,
       existing: 1,
       unsubscribed: 0,
     });
-    expect(seen[4]?.body).toEqual({ p_people: [{ name: 'A', email: 'a@b.co' }], p_label: 'Sheet' });
+    expect(seen[4]?.body).toEqual({
+      p_people: [{ name: 'A', email: 'a@b.co' }],
+      p_label: 'Sheet',
+      p_import: 'key-0123456789abcdef',
+    });
     expect(await db.unsubscribe('tok')).toBe('a@b.co');
   });
 

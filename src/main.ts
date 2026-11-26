@@ -273,7 +273,7 @@ async function submitImport(data: FormData): Promise<void> {
   const im = S.ann.importing;
   if (!im || S.busy) return;
   // The label is fixed once part of the list is saved, so every batch carries the same one.
-  if (!im.progress) im.label = String(data.get('label') ?? '').trim();
+  if (!im.progress?.done) im.label = String(data.get('label') ?? '').trim();
   if (im.contacts.length > MAX_IMPORT_PEOPLE) {
     S.ann.error = `Import up to ${MAX_IMPORT_PEOPLE.toLocaleString('en-GB')} people at a time. Split the sheet and import each part.`;
     return render();
@@ -288,7 +288,9 @@ async function submitImport(data: FormData): Promise<void> {
   im.progress = progress;
   const label = im.label || im.file;
   try {
-    await importInBatches(im.contacts, progress, (batch) => api.importContacts(batch, label));
+    await importInBatches(im.contacts, progress, (batch, key) =>
+      api.importContacts(batch, label, key),
+    );
     im.result = progress.counts;
     im.progress = null;
     void loadAnnouncements();
@@ -296,10 +298,11 @@ async function submitImport(data: FormData): Promise<void> {
     if (progress.done) {
       const n = progress.done.toLocaleString('en-GB');
       const of = im.contacts.length.toLocaleString('en-GB');
-      S.ann.error = `${n} of ${of} people were saved, then the import stopped. ${errorMessage(e)} Press Import again to send the rest; nobody is added twice.`;
+      S.ann.error = `At least ${n} of ${of} people are saved; the import stopped before the rest. ${errorMessage(e)} Press Import again to send the rest; nobody is added twice.`;
       void loadAnnouncements();
     } else {
-      im.progress = null;
+      // Kept even though nothing is known to be saved: the first batch may have been saved with
+      // its reply lost, and sending it again under the same key still counts those people once.
       S.ann.error = errorMessage(e);
     }
   }
