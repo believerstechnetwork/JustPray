@@ -65,9 +65,12 @@ export function dateBlock(date: string, endDate?: string | null): string {
 /** One event as the home page lists it. With a picture, the date sits on it as a small tag;
  *  without one, the date is drawn large on the cloth, so the card never looks half empty. */
 export function upcomingCard(e: CardFields): string {
-  const link = e.linkUrl
-    ? `<a class="btn small ghost" href="${esc(e.linkUrl)}" target="_blank" rel="noopener">${esc(e.linkLabel || 'Learn more')} ${EXTERNAL}<span class="sr"> (opens in a new tab)</span></a>`
-    : '';
+  // Only a web link becomes a button: the preview shows unsaved values, and a javascript: link
+  // must never be clickable there.
+  const link =
+    e.linkUrl && /^https?:\/\//i.test(e.linkUrl)
+      ? `<a class="btn small ghost" href="${esc(e.linkUrl)}" target="_blank" rel="noopener">${esc(e.linkLabel || 'Learn more')} ${EXTERNAL}<span class="sr"> (opens in a new tab)</span></a>`
+      : '';
   const date = e.date ? dateBlock(e.date, e.endDate) : '';
   const face = e.imageUrl
     ? `<figure class="up-face up-img"><img src="${esc(e.imageUrl)}" alt="" loading="lazy">${date}</figure>`

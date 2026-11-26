@@ -248,7 +248,24 @@ export class MemoryDb implements Db {
   ): Promise<AnnouncementRecord | null> {
     const a = this.announcements.find((x) => x.id === id);
     if (!a) return null;
-    Object.assign(a, fields);
+    // Only the editable fields, as the database update does: status, counts and the email
+    // snapshot never come from the caller.
+    Object.assign(a, {
+      title: fields.title,
+      date: fields.date,
+      endDate: fields.endDate,
+      time: fields.time,
+      theme: fields.theme,
+      themeTba: fields.themeTba,
+      venue: fields.venue,
+      venueTba: fields.venueTba,
+      summary: fields.summary,
+      imageUrl: fields.imageUrl,
+      linkUrl: fields.linkUrl,
+      linkLabel: fields.linkLabel,
+      subject: fields.subject,
+      message: fields.message,
+    });
     return this.view(a);
   }
 

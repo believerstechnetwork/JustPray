@@ -126,17 +126,23 @@ function go(route: Route): void {
   else location.hash = `/${route}`;
 }
 
+/** Bumped each time a refresh puts a list on the page, so an older page load never replaces it. */
+let upcomingApplied = 0;
+
 async function loadPublic(): Promise<void> {
   S.load = 'loading';
   const ticket = seatCount.ticket();
   const eventAtStart = eventVersion;
+  const upcomingAtStart = upcomingApplied;
   let switchedToUsd = false;
   try {
     const info = await api.publicInfo();
     if (eventAtStart === eventVersion) S.event = info.event;
     seatCount.applyRead(ticket, () => (S.reserved = info.reserved));
     S.banks = info.banks;
-    S.upcoming = info.upcoming ?? [];
+    // A refresh that landed after this load began holds a newer list; and null means the list
+    // could not be read this time, so the one already shown stays.
+    if (upcomingAtStart === upcomingApplied && info.upcoming) S.upcoming = info.upcoming;
     // Offer dollars by default only when there is no naira account.
     if (!S.banks.NGN && S.banks.USD && S.currency !== 'USD') {
       setCurrency('USD');
@@ -225,26 +231,39 @@ async function preferences(action?: 'unsubscribe' | 'resubscribe'): Promise<void
 }
 
 /** Read a chosen Excel or CSV file in the browser, for the organiser to check before importing. */
+let importReads = 0;
 async function readImportFile(input: HTMLInputElement): Promise<void> {
   const file = input.files?.[0];
   if (!file) return;
+  // Only the latest file chosen, in the import panel that chose it, shows its result: an earlier
+  // read that finishes late, or one whose panel was left, changes nothing (but still frees busy).
+  const read = ++importReads;
+  const editor = annEditor;
+  const current = (): boolean =>
+    read === importReads && editor === annEditor && S.ann.panel === 'import';
   S.ann.error = '';
   S.busy = true;
   render();
   try {
     const parsed = await readContactsFile(file);
-    S.ann.importing = {
-      file: file.name,
-      ...parsed,
-      label: file.name.replace(/\.(xlsx|csv)$/i, ''),
-      result: null,
-    };
-    if (!parsed.contacts.length)
-      S.ann.error = 'No email addresses were found in that file. Check it has a column of emails.';
+    if (current()) {
+      S.ann.importing = {
+        file: file.name,
+        ...parsed,
+        label: file.name.replace(/\.(xlsx|csv)$/i, ''),
+        result: null,
+      };
+      if (!parsed.contacts.length)
+        S.ann.error =
+          'No email addresses were found in that file. Check it has a column of emails.';
+    }
   } catch {
-    S.ann.error = 'That file could not be read. Save it as .xlsx or .csv and try again.';
+    if (current())
+      S.ann.error = 'That file could not be read. Save it as .xlsx or .csv and try again.';
+  } finally {
+    if (read === importReads) S.busy = false;
   }
-  S.busy = false;
+  if (!current()) return render();
   freshForm = true;
   render();
 }
@@ -478,9 +497,12 @@ async function refreshUpcoming(): Promise<void> {
   // Two publishes in a row start two refreshes; only the latest one's answer is kept.
   const request = ++upcomingRequest;
   try {
-    const upcoming = (await api.publicInfo()).upcoming ?? [];
+    const upcoming = (await api.publicInfo()).upcoming;
     if (request !== upcomingRequest) return;
+    // null: the list could not be read just now, so keep the cards already shown.
+    if (!upcoming) return;
     S.upcoming = upcoming;
+    upcomingApplied++;
   } catch {
     return; // the next page load picks it up
   }
@@ -566,13 +588,18 @@ async function annAction(action: string, el: HTMLElement): Promise<void> {
       S.busy = true;
       a.error = a.notice = '';
       render();
+      // The answer belongs to the draft that asked; another opened meanwhile shows nothing of it.
+      const editor = annEditor;
+      const to = a.testTo;
       try {
-        await api.testAnnouncement(a.form, a.testTo);
-        a.notice = `Test sent to ${a.testTo}. Check that inbox, and its spam folder.`;
+        await api.testAnnouncement(a.form, to);
+        if (editor === annEditor)
+          a.notice = `Test sent to ${to}. Check that inbox, and its spam folder.`;
       } catch (e) {
-        a.error = errorMessage(e);
+        if (editor === annEditor) a.error = errorMessage(e);
+      } finally {
+        S.busy = false;
       }
-      S.busy = false;
       return render();
     }
     case 'ann-publish': {
@@ -647,7 +674,10 @@ async function annAction(action: string, el: HTMLElement): Promise<void> {
         }
       }
       S.busy = false;
-      return render();
+      render();
+      // The dialog closed: back to the button that opened it, as Cancel does.
+      if (editor === annEditor) document.getElementById('ann-publish-btn')?.focus();
+      return;
     }
     case 'ann-delete': {
       // Keep the id and editor that asked: the organiser may open another draft meanwhile.
@@ -693,7 +723,11 @@ document.addEventListener('click', async (e) => {
   // A click to register for another BTN event: a burst first, then the link opens in a new tab
   // (opening it straight away would hide the burst behind the new tab).
   const register = target.closest<HTMLAnchorElement>('.up-card a.btn');
-  if (register && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  // A plain left click only: Ctrl/Cmd/Shift/Alt-clicks and other buttons open the way the browser
+  // and the visitor chose.
+  const plain =
+    e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.defaultPrevented;
+  if (register && plain && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
     e.preventDefault();
     burst(register, { count: 36, spread: 170 });
     setTimeout(() => {

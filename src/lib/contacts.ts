@@ -33,6 +33,9 @@ function findEmailHeading(head: string[], rows: string[][]): number {
     const hits = rows.filter((r) => EMAIL_RE.test((r[i] ?? '').toLowerCase())).length;
     if (hits > bestHits) [best, bestHits] = [i, hits];
   }
+  // None of those columns holds an address, but the first row does: it is data, not headings
+  // (say "Email Team, ada@example.com"), so let the contents decide.
+  if (bestHits === 0 && head.some((h) => EMAIL_RE.test(h.trim()))) return -1;
   return best;
 }
 
@@ -103,13 +106,19 @@ export function parseCsv(text: string): string[][] {
   // Drop the byte-order mark some spreadsheet apps put at the start of a CSV.
   const src = text.replace(/^\uFEFF/, '');
   // Semicolons separate cells in some regions' spreadsheet exports. Count each in the first
-  // record, outside quotes, so a quoted "Obi, Ada" does not decide it.
+  // record that has anything in it (blank lines first are skipped), outside quotes, so a quoted
+  // "Obi, Ada" does not decide it.
   let commas = 0;
   let semis = 0;
+  let started = false;
   for (let i = 0, q = false; i < src.length; i++) {
     const ch = src[i];
+    if (!q && (ch === '\n' || ch === '\r')) {
+      if (started) break;
+      continue;
+    }
+    if (!/\s/.test(ch ?? '')) started = true;
     if (ch === '"') q = !q;
-    else if (!q && (ch === '\n' || ch === '\r')) break;
     else if (!q && ch === ',') commas++;
     else if (!q && ch === ';') semis++;
   }

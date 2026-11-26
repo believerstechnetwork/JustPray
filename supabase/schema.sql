@@ -1,5 +1,8 @@
 -- Just Pray database. Run once in Supabase: SQL Editor -> New query -> paste -> Run.
 -- Safe to run again: it only creates what is missing.
+-- Run it when no announcement is sending (none shows "Sending" in the admin list). It alters the
+-- tables the sender works on, so the two can deadlock: PostgreSQL then stops one. If it stops this
+-- script, run it again; if it stops a send, that email is closed as failed (never sent twice).
 --
 -- Only the server (Netlify Functions, using the secret key) can read or write these tables.
 -- Row Level Security is on and there are no policies, so the public API keys get nothing.

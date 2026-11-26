@@ -14,6 +14,18 @@ export interface MailEnv {
 }
 
 const DEFAULT_NAME = 'Just Pray';
+/** Errors from before any connection to the mail service existed (sign-in, address or DNS
+ *  failures, a refused connection), so nothing can have been sent. Kept separate from a timeout or
+ *  a dropped connection, which can come after the service took the email. */
+const NEVER_CONNECTED = new Set([
+  'EAUTH',
+  'EDNS',
+  'EENVELOPE',
+  'ECONNREFUSED',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+]);
+
 /** Longest one Gmail send may take, start to finish. */
 export const GMAIL_SEND_DEADLINE_MS = 12_000;
 
@@ -61,9 +73,7 @@ export class GmailMailer implements Mailer {
    *  may come after Gmail accepted it, so those are not retried. */
   canRetry(error: unknown): boolean {
     const e = (error ?? {}) as { responseCode?: unknown; code?: unknown };
-    return (
-      typeof e.responseCode === 'number' || ['EAUTH', 'EDNS', 'EENVELOPE'].includes(String(e.code))
-    );
+    return typeof e.responseCode === 'number' || NEVER_CONNECTED.has(String(e.code));
   }
 
   /** Gmail's daily sending limit (550 5.4.5) or a temporary rate limit (421 / 4.7.0). */
@@ -118,15 +128,16 @@ export class ResendMailer implements Mailer {
 
   canRetry(error: unknown): boolean {
     const status = (error as { status?: unknown } | null)?.status;
+    // No response at all: retry only when the connection was never made (refused, or the name did
+    // not resolve), so the request cannot have reached Resend. A timeout or a connection dropped
+    // part-way may come after Resend took it.
+    if (typeof status !== 'number') {
+      const cause = (error as { cause?: { code?: unknown } } | null)?.cause;
+      return NEVER_CONNECTED.has(String(cause?.code));
+    }
     // 408 (timed out) and 409 (another send with this key is still in progress) leave the
     // outcome open, so they are not retried either.
-    return (
-      typeof status === 'number' &&
-      status >= 400 &&
-      status < 500 &&
-      status !== 408 &&
-      status !== 409
-    );
+    return status >= 400 && status < 500 && status !== 408 && status !== 409;
   }
 }
 

@@ -102,7 +102,8 @@ export interface PublicInfo {
   reserved: number;
   banks: Banks;
   /** Other BTN events coming up, soonest first. */
-  upcoming: UpcomingEvent[];
+  /** null when the list could not be read this time (the page keeps the one it has). */
+  upcoming: UpcomingEvent[] | null;
 }
 
 /** A reservation made during this visit. */

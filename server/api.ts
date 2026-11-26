@@ -53,7 +53,9 @@ export interface ApiDeps {
 
 const MAX_BODY = 10_000;
 /** Imports can be larger: about 5,000 people. */
-const MAX_IMPORT_BODY = 600_000;
+/** Room for 5,000 people with the longest names (120) and emails (254) the import keeps, with
+ *  JSON quoting and escapes to spare. */
+const MAX_IMPORT_BODY = 2_500_000;
 const MAX_IMPORT = 5000;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const PRODUCTION_URL = 'https://justprayy.netlify.app';
@@ -425,14 +427,15 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
           .upcomingAnnouncements(lagosDay(new Date()), 3)
           .catch((e: unknown) => {
             log('Could not load upcoming announcements', e);
-            return [];
+            return null;
           }),
       ]);
       return json(200, {
         event,
         reserved,
         banks: deps.banks,
-        upcoming: upcoming.map(publicAnnouncement),
+        // null (not []) when the list could not be read, so a page that has it keeps it.
+        upcoming: upcoming ? upcoming.map(publicAnnouncement) : null,
       });
     }
 

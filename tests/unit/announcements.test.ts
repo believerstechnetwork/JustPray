@@ -6,7 +6,7 @@ import { GmailMailer, MemoryMailer, ResendMailer } from '../../server/mailer';
 import { MemoryDb } from '../../server/memory-db';
 import { processOutbox } from '../../server/outbox';
 import { parseCsv, rowsToContacts } from '../../src/lib/contacts';
-import { dateBlock } from '../../src/views/announcements';
+import { dateBlock, upcomingCard } from '../../src/views/announcements';
 
 const EVENT = {
   title: 'Just Pray',
@@ -104,6 +104,28 @@ describe('the date drawn on an event card', () => {
   });
 });
 
+describe('event cards', () => {
+  it('turns only a web address into a button, never a javascript: link', () => {
+    const card = (linkUrl: string) =>
+      upcomingCard({
+        title: 'BTN Conference',
+        date: '2027-09-09',
+        endDate: null,
+        time: null,
+        theme: null,
+        themeTba: false,
+        venue: 'Lagos',
+        venueTba: false,
+        summary: 'S',
+        imageUrl: null,
+        linkUrl,
+        linkLabel: 'Register',
+      });
+    expect(card('https://example.com/register')).toContain('href="https://example.com/register"');
+    expect(card('javascript:alert(1)')).not.toContain('href=');
+  });
+});
+
 describe('reading a spreadsheet', () => {
   it('uses the Name and Email headings, keeps each email once and counts bad rows', () => {
     const out = rowsToContacts([
@@ -131,6 +153,26 @@ describe('reading a spreadsheet', () => {
     ).toEqual([{ name: 'Ada Obi', email: 'a@b.co' }]);
     expect(rowsToContacts([['Bola Ade', 'bola@x.co', '0802']]).contacts).toEqual([
       { name: 'Bola Ade', email: 'bola@x.co' },
+    ]);
+  });
+
+  it('picks the separator from the first line with content, after blank lines', () => {
+    // (The blank line itself is dropped later, with the other empty rows.)
+    expect(parseCsv('\r\nName;Email\r\nAda;ada@example.com').filter((r) => r.join(''))).toEqual([
+      ['Name', 'Email'],
+      ['Ada', 'ada@example.com'],
+    ]);
+  });
+
+  it('treats a first row with an address as data, even if a cell mentions email', () => {
+    expect(
+      rowsToContacts([
+        ['Email Team', 'ada@example.com'],
+        ['Bola', 'bola@example.com'],
+      ]).contacts,
+    ).toEqual([
+      { name: 'Email Team', email: 'ada@example.com' },
+      { name: 'Bola', email: 'bola@example.com' },
     ]);
   });
 
@@ -189,6 +231,19 @@ describe('importing people', () => {
       { name: 'Ada Obi', email: 'booked@example.com', source: 'Booked a seat' },
       { name: 'New One', email: 'new@example.com', source: 'Conference 2026' },
     ]);
+  });
+
+  it('accepts 5,000 people with the longest names and emails in one import', async () => {
+    const people = Array.from({ length: 5000 }, (_, i) => ({
+      name: 'N'.repeat(120),
+      email: `${String(i).padStart(5, '0')}${'x'.repeat(230)}@example.com`,
+    }));
+    const { status, data } = await call('POST', '/api/admin/contacts/import', {
+      label: 'Big sheet',
+      people,
+    });
+    expect(status).toBe(200);
+    expect(data).toMatchObject({ added: 5000 });
   });
 
   it('needs a signed-in organiser and refuses an empty list', async () => {
@@ -488,15 +543,31 @@ describe('review fixes', () => {
         await failWith(() => Promise.reject(new DOMException('timed out', 'TimeoutError'))),
       ),
     ).toBe(false);
+    // The connection was refused or the name did not resolve: the request never reached Resend.
+    const refused = Object.assign(new TypeError('fetch failed'), {
+      cause: { code: 'ECONNREFUSED' },
+    });
+    expect(resend.canRetry(await failWith(() => Promise.reject(refused)))).toBe(true);
+    // A connection dropped part-way is uncertain.
+    const reset = Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } });
+    expect(resend.canRetry(await failWith(() => Promise.reject(reset)))).toBe(false);
   });
 
   it('gives each Gmail send one deadline for the whole exchange', async () => {
     const gmail = new GmailMailer('me@gmail.com', 'app password');
     const sendMail = vi.fn(async () => ({}));
     (gmail as unknown as { transport: { sendMail: typeof sendMail } }).transport = { sendMail };
-    await gmail.send({ to: 'a@b.co', subject: 's', text: 't', html: 'h', idempotencyKey: 'k' });
+    const deadline = new AbortController().signal;
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(deadline);
+    try {
+      await gmail.send({ to: 'a@b.co', subject: 's', text: 't', html: 'h', idempotencyKey: 'k' });
+      // A 12-second deadline, and that very signal is what the transport gets.
+      expect(timeout).toHaveBeenCalledWith(12_000);
+    } finally {
+      timeout.mockRestore();
+    }
     const options = (sendMail.mock.calls[0] as unknown as [Record<string, unknown>])[0];
-    expect(options.signal).toBeInstanceOf(AbortSignal);
+    expect(options.signal).toBe(deadline);
     // Gmail has no idempotency keys, so none is passed on.
     expect(options).not.toHaveProperty('idempotencyKey');
     // An aborted send may have been accepted, so it is never retried.
@@ -505,6 +576,13 @@ describe('review fixes', () => {
 
   it('retries a Gmail failure only when Gmail certainly did not take the email', () => {
     const gmail = new GmailMailer('me@gmail.com', 'app password');
+    // Refused before the greeting, or the name did not resolve: nothing reached Gmail.
+    expect(gmail.canRetry(Object.assign(new Error('refused'), { code: 'ECONNREFUSED' }))).toBe(
+      true,
+    );
+    expect(gmail.canRetry(Object.assign(new Error('no such host'), { code: 'ENOTFOUND' }))).toBe(
+      true,
+    );
     expect(gmail.canRetry(Object.assign(new Error('450 busy'), { responseCode: 450 }))).toBe(true);
     expect(gmail.canRetry(Object.assign(new Error('bad login'), { code: 'EAUTH' }))).toBe(true);
     // A timeout or dropped connection may come after Gmail accepted it.
@@ -1015,6 +1093,25 @@ describe('review fixes', () => {
     expect(db.outbox).toHaveLength(1);
   });
 
+  it('updates only the editable fields, never the status or counts', async () => {
+    const draft = await db.createAnnouncement({
+      ...ANN,
+      endDate: null,
+      time: null,
+      theme: null,
+      imageUrl: null,
+      linkUrl: null,
+      linkLabel: null,
+    });
+    db.contacts.push({ name: 'A', email: 'a@x.co', source: 'Sheet' });
+    await db.publishAnnouncement(draft.id, 'imported');
+    // A caller passing back the old draft record, with a new title.
+    const updated = await db.updateAnnouncement(draft.id, { ...draft, title: 'New title' });
+    expect(updated).toMatchObject({ title: 'New title', status: 'published', recipients: 1 });
+    expect(await db.publishAnnouncement(draft.id, 'imported')).toBeNull();
+    expect(db.outbox).toHaveLength(1);
+  });
+
   it('leaves nothing queued when publishing fails part-way, so a retry queues each person once', async () => {
     let broken = false;
     const local = new MemoryDb(EVENT, () => {
@@ -1052,6 +1149,7 @@ describe('review fixes', () => {
     const { status, data } = await call('GET', '/api/public', undefined, { cookie: '' });
     expect(status).toBe(200);
     expect(data.event).toMatchObject({ title: 'Just Pray' });
-    expect(data.upcoming).toEqual([]);
+    // null, not [], so a page that already shows events keeps them.
+    expect(data.upcoming).toBeNull();
   });
 });

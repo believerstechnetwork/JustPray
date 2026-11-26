@@ -11,6 +11,10 @@ TypeScript) and a Supabase Postgres database. Confirmation emails go out through
 1. **Database.** In Supabase, open SQL Editor, paste `supabase/schema.sql` and run it. It is safe to
    run again; it only creates what is missing. When an update changes `schema.sql`, run it again
    before merging that update: the changes are written so the live site keeps working meanwhile.
+   Run it when no announcement is sending (none shows "Sending" in the admin Announcements list):
+   the update changes the tables the sender uses, and the two can block each other. If that
+   happens, Supabase stops one of them; nothing is sent twice, and running the update again
+   finishes it.
 2. **Settings.** In Netlify, open Site configuration, then Environment variables, and add the
    variables listed in `.env.example`. Mark the keys and passwords as secret.
 3. **Deploy.** Push to `main`. The site, the API (`/api/*`) and a daily keep-alive job (so Supabase's
