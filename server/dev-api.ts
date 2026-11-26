@@ -3,6 +3,7 @@ import type { Connect } from 'vite';
 import { handleApi, type ApiDeps } from './api';
 import { MemoryMailer } from './mailer';
 import { MemoryDb } from './memory-db';
+import { processOutbox } from './outbox';
 
 /** Password for the organiser area when running locally (`npm run dev` / e2e tests). */
 export const DEV_ADMIN_PASSWORD = 'dev-password';
@@ -39,8 +40,17 @@ export function devApiMiddleware(): Connect.NextHandleFunction {
     },
     defer: (work) => void work,
     failedLoginDelayMs: 50,
+    testEmail: 'organisers@example.com',
     log: (m, e) => console.warn(`[dev api] ${m}`, e ?? ''),
   };
+
+  // Stand-in for the scheduled sender: work through queued announcement emails locally.
+  if (deps.db && deps.mailer) {
+    const { db, mailer } = deps;
+    setInterval(() => {
+      void processOutbox({ db, mailer, siteUrl: 'http://localhost', limit: 20, dailyLimit: 350 });
+    }, 3000).unref();
+  }
 
   return (req, res, next) => {
     if (!req.url?.startsWith('/api/')) return next();

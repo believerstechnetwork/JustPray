@@ -2,16 +2,20 @@ import type {
   AdminData,
   Announcement,
   AnnouncementForm,
+  AudienceMember,
+  AudienceScope,
   BankDetails,
   Banks,
   CancelInfo,
   Currency,
   UpcomingEvent,
   GatheringEvent,
+  ImportOutcome,
   Reservation,
 } from './data/types';
 
-export type Route = 'home' | 'register' | 'confirmed' | 'support' | 'admin' | 'cancel';
+export type Route =
+  'home' | 'register' | 'confirmed' | 'support' | 'admin' | 'cancel' | 'unsubscribe';
 export const ROUTES: readonly Route[] = [
   'home',
   'register',
@@ -19,6 +23,7 @@ export const ROUTES: readonly Route[] = [
   'support',
   'admin',
   'cancel',
+  'unsubscribe',
 ];
 export type AdminTab = 'overview' | 'attendees' | 'contributions' | 'events' | 'announcements';
 /** Support flow: choose an amount, see the bank details, then the thank-you note. */
@@ -64,6 +69,24 @@ export interface UiState {
   ann: {
     list: Announcement[] | null;
     audience: number;
+    counts: Record<AudienceScope, number>;
+    testTo: string;
+    dailyLimit: number;
+    /** Which lists the announcement being published goes to. */
+    send: { booked: boolean; imported: boolean };
+    /** The mailing list, when it is open. */
+    people: AudienceMember[] | null;
+    /** What the list view shows: the announcements, the mailing list, or an import. */
+    panel: 'list' | 'people' | 'import';
+    /** An Excel or CSV file read in the browser, waiting to be confirmed. */
+    importing: {
+      file: string;
+      contacts: { name: string; email: string }[];
+      invalid: number;
+      duplicates: number;
+      label: string;
+      result: ImportOutcome | null;
+    } | null;
     /** 'new', an announcement id, or null for the list. */
     editing: 'new' | number | null;
     form: AnnouncementForm;
@@ -73,6 +96,8 @@ export interface UiState {
     notice: string;
     error: string;
   };
+  /** The unsubscribe page, opened from the link in an announcement. */
+  unsub: { token: string; state: 'ask' | 'done' | 'error'; error: string };
   /** The "Cancel my seat" page, opened from the private link in an email. */
   cancel: {
     token: string;
@@ -112,11 +137,19 @@ export const S: UiState = {
   adminError: '',
   adminNotice: '',
   cancel: { token: '', load: 'loading', info: null, error: '', justCancelled: false },
+  unsub: { token: '', state: 'ask', error: '' },
   upcoming: [],
   ann: {
     list: null,
     audience: 0,
     editing: null,
+    counts: { all: 0, booked: 0, imported: 0 },
+    testTo: '',
+    dailyLimit: 350,
+    send: { booked: true, imported: true },
+    people: null,
+    panel: 'list',
+    importing: null,
     form: blankAnnouncement(),
     view: 'email',
     device: 'laptop',

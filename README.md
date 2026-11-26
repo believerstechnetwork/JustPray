@@ -34,6 +34,17 @@ still work but no email is sent (the organiser view shows a warning).
   stored. Cancelling frees the seat at once, sends a short note, and keeps the person on the organiser
   list as Cancelled. Booking again with the same email gives back the same seat while seats remain.
   Cancelling closes an hour after the gathering starts.
+- **Announcements** (`/#/admin` → Announcements): other BTN events, such as a conference. Fill in
+  the event (theme and venue can be "to be announced"), pick a picture, write the email, and see
+  it as it will arrive. "Send test" emails it to you first. Publishing asks who to send to
+  (people who booked and asked for updates, people imported from Excel, or both), then lists the
+  event on the home page until it ends.
+- **Mailing list:** import people from an Excel or CSV file (a column of emails, names optional);
+  the site shows what it found before anything is saved. Every announcement has a one-click
+  unsubscribe link, and anyone who unsubscribes is never emailed one again or added back.
+- **Sending:** announcement emails wait in an outbox. A first batch goes out on publishing, then
+  `send-announcements` sends the next batch every two minutes, up to `ANNOUNCE_DAILY_LIMIT`
+  (default 350) a day so Gmail's limit is never hit; a large list finishes the next day.
 - **Support:** the giver picks naira or dollars, an amount, and enters their name and email. They get the
   account for that currency and a unique reference (for example `JP-7K3QX`) to put in the transfer
   description. "I've sent it" marks it as ready to check.
@@ -88,10 +99,12 @@ server/
   api.ts           every /api route, independent of Netlify so it is easy to test
   supabase-db.ts   storage on Supabase; memory-db.ts is the same rules in memory
   mailer.ts        Gmail (SMTP app password) or Resend
-  emails.ts        the email templates (confirmation, cancellation)
+  emails.ts        the email templates (confirmation, cancellation, announcement)
+  outbox.ts        sends queued announcement emails in batches, within the daily limit
   auth.ts          signed organiser session cookie
 netlify/functions/
   api.mts          serves /api/*
+  send-announcements.mts  every two minutes, sends the next batch of announcement emails
   keepalive.mts    daily query so the free database is not paused
 supabase/
   schema.sql       tables, access rules and the reserve_seat function

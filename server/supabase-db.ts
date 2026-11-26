@@ -2,7 +2,11 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type {
   AnnouncementFields,
   AnnouncementRecord,
+  AudienceMember,
+  AudienceScope,
   CancelLookup,
+  ImportResult,
+  OutboxItem,
   ContributionRecord,
   ContributionStatus,
   Db,
@@ -90,6 +94,10 @@ const toAnnouncement = (r: Row): AnnouncementRecord => ({
   status: r.status === 'published' ? 'published' : 'draft',
   publishedAt: opt(r.published_at),
   sentCount: n(r.sent_count),
+  audience:
+    r.audience === 'booked' || r.audience === 'imported' || r.audience === 'all'
+      ? r.audience
+      : null,
   recipients: n(r.recipients),
   createdAt: s(r.created_at),
 });
@@ -401,17 +409,59 @@ export class SupabaseDb implements Db {
     return rows.length > 0;
   }
 
-  async publishAnnouncement(id: number, recipients: number): Promise<AnnouncementRecord | null> {
-    // Conditional on still being a draft, so two presses publish (and send) once.
+  async announcementById(id: number): Promise<AnnouncementRecord | null> {
     const rows = check(
-      await this.sb
-        .from('announcements')
-        .update({ status: 'published', published_at: new Date().toISOString(), recipients })
-        .eq('id', id)
-        .eq('status', 'draft')
-        .select(),
+      await this.sb.from('announcements').select('*').eq('id', id).limit(1),
     ) as Row[];
     return rows[0] ? toAnnouncement(rows[0]) : null;
+  }
+
+  async publishAnnouncement(id: number, scope: AudienceScope): Promise<AnnouncementRecord | null> {
+    // One database function publishes and queues the emails together, and only from a draft,
+    // so two presses publish (and send) once.
+    const rows = check(
+      await this.sb.rpc('publish_announcement', { p_id: id, p_scope: scope }),
+    ) as Row[];
+    return rows[0] ? toAnnouncement(rows[0]) : null;
+  }
+
+  async claimOutbox(limit: number, dailyLimit: number): Promise<OutboxItem[]> {
+    const rows = check(
+      await this.sb.rpc('claim_announcement_sends', { p_limit: limit, p_daily: dailyLimit }),
+    ) as Row[];
+    return rows.map((r) => ({
+      id: n(r.id),
+      announcementId: n(r.announcement_id),
+      name: s(r.name),
+      email: s(r.email),
+      unsubToken: s(r.unsub_token),
+    }));
+  }
+
+  async finishOutbox(id: number, ok: boolean, error?: string): Promise<void> {
+    check(
+      await this.sb.rpc('finish_announcement_send', {
+        p_id: id,
+        p_ok: ok,
+        p_error: error ?? null,
+      }),
+    );
+  }
+
+  async unsubscribe(token: string): Promise<string | null> {
+    const email = check(await this.sb.rpc('unsubscribe_by_token', { p_token: token })) as unknown;
+    return typeof email === 'string' && email ? email : null;
+  }
+
+  async importContacts(
+    people: { name: string; email: string }[],
+    label: string,
+  ): Promise<ImportResult> {
+    const rows = check(
+      await this.sb.rpc('import_contacts', { p_people: people, p_label: label }),
+    ) as Row[];
+    const r = rows[0] ?? {};
+    return { added: n(r.added), existing: n(r.existing), unsubscribed: n(r.unsubscribed) };
   }
 
   async upcomingAnnouncements(todayIso: string, limit: number): Promise<AnnouncementRecord[]> {
@@ -427,30 +477,19 @@ export class SupabaseDb implements Db {
     return rows.map(toAnnouncement);
   }
 
-  async updatesAudience(): Promise<{ name: string; email: string }[]> {
-    const [rows, unsub] = await Promise.all([
-      this.all('id', (after) =>
-        this.sb
-          .from('reservations')
-          .select('id,name,email')
-          .eq('updates', true)
-          .gt('id', after)
-          .order('id', { ascending: true })
-          .limit(PAGE),
-      ),
-      this.all('id', (after) =>
-        this.sb
-          .from('unsubscribes')
-          .select('id,email')
-          .gt('id', after)
-          .order('id', { ascending: true })
-          .limit(PAGE),
-      ),
-    ]);
-    const blocked = new Set(unsub.map((r) => s(r.email)));
-    const people = new Map<string, string>();
-    for (const r of rows) if (!blocked.has(s(r.email))) people.set(s(r.email), s(r.name));
-    return [...people].map(([email, name]) => ({ name, email }));
+  async updatesAudience(scope: AudienceScope = 'all'): Promise<AudienceMember[]> {
+    // The function returns people ordered by email; read it a page at a time (responses are
+    // capped), moving past the last email seen.
+    const out: AudienceMember[] = [];
+    let after = '';
+    for (;;) {
+      const rows = check(
+        await this.sb.rpc('updates_audience', { p_scope: scope, p_after: after, p_limit: PAGE }),
+      ) as Row[];
+      if (rows.length === 0) return out;
+      for (const r of rows) out.push({ name: s(r.name), email: s(r.email), source: s(r.source) });
+      after = s(rows[rows.length - 1]?.email);
+    }
   }
 
   async ping(): Promise<void> {

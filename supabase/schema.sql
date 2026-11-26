@@ -89,6 +89,7 @@ create table if not exists public.announcements (
   published_at timestamptz,
   sent_count integer not null default 0,
   recipients integer not null default 0,
+  audience text check (audience in ('all', 'booked', 'imported')),
   created_at timestamptz not null default now()
 );
 
@@ -99,10 +100,231 @@ create table if not exists public.unsubscribes (
   created_at timestamptz not null default now()
 );
 
+-- People added from an Excel import. They get announcements until they unsubscribe.
+create table if not exists public.contacts (
+  id bigint generated always as identity primary key,
+  name text not null default '',
+  email text not null unique,
+  -- The label given to the import, e.g. "BTN Conference 2026 attendees".
+  source text not null default 'Imported',
+  created_at timestamptz not null default now()
+);
+
+-- The outbox: one row per person per published announcement, sent in small batches.
+create table if not exists public.announcement_sends (
+  id bigint generated always as identity primary key,
+  announcement_id bigint not null references public.announcements (id) on delete cascade,
+  name text not null default '',
+  email text not null,
+  -- Private token in this person's unsubscribe link.
+  unsub_token text not null unique,
+  status text not null default 'pending'
+    check (status in ('pending', 'sending', 'sent', 'failed', 'skipped')),
+  attempts integer not null default 0,
+  claimed_at timestamptz,
+  sent_at timestamptz,
+  error text,
+  unique (announcement_id, email)
+);
+create index if not exists announcement_sends_pending
+  on public.announcement_sends (id) where status = 'pending';
+create index if not exists announcement_sends_sent_at
+  on public.announcement_sends (sent_at) where sent_at is not null;
+
 alter table public.announcements enable row level security;
 alter table public.unsubscribes enable row level security;
-revoke all on public.announcements, public.unsubscribes from anon, authenticated;
-grant all on public.announcements, public.unsubscribes to service_role;
+alter table public.contacts enable row level security;
+alter table public.announcement_sends enable row level security;
+revoke all on public.announcements, public.unsubscribes, public.contacts, public.announcement_sends
+  from anon, authenticated;
+grant all on public.announcements, public.unsubscribes, public.contacts, public.announcement_sends
+  to service_role;
+
+-- Who gets announcements, one row per email, ordered by email and read a page at a time:
+--   p_scope 'booked'   : people who booked a seat and asked to hear about future events
+--   p_scope 'imported' : people added from an Excel import
+--   p_scope 'all'      : both (someone on both lists appears once, as "Booked a seat")
+-- Anyone who unsubscribed is left out.
+create or replace function public.updates_audience(
+  p_scope text default 'all',
+  p_after text default '',
+  p_limit integer default 1000
+)
+returns table (name text, email text, source text)
+language sql
+stable
+set search_path = public
+as $$
+  select q.name, q.email, q.source from (
+    select distinct on (p.email) p.name, p.email, p.source
+    from (
+      select r.name, r.email, 'Booked a seat'::text as source, 0 as rank
+      from public.reservations r
+      where r.updates and p_scope in ('all', 'booked')
+      union all
+      select c.name, c.email, c.source, 1
+      from public.contacts c
+      where p_scope in ('all', 'imported')
+    ) p
+    where p.email > p_after
+      and not exists (select 1 from public.unsubscribes u where u.email = p.email)
+    order by p.email, p.rank
+  ) q
+  order by q.email
+  limit p_limit;
+$$;
+
+-- Publish a draft and queue one email per person, in one step. Returns nothing when the
+-- announcement is unknown or already published, so pressing Publish twice sends once.
+create or replace function public.publish_announcement(p_id bigint, p_scope text)
+returns setof public.announcements
+language plpgsql
+set search_path = public
+as $$
+declare
+  queued integer;
+begin
+  perform 1 from public.announcements a where a.id = p_id and a.status = 'draft' for update;
+  if not found then
+    return;
+  end if;
+  insert into public.announcement_sends (announcement_id, name, email, unsub_token)
+  select p_id, x.name, x.email,
+         replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '')
+  from public.updates_audience(p_scope, '', 2147483647) x
+  on conflict (announcement_id, email) do nothing;
+  get diagnostics queued = row_count;
+  return query
+    update public.announcements a
+    set status = 'published', published_at = now(), recipients = queued, audience = p_scope
+    where a.id = p_id
+    returning a.*;
+end;
+$$;
+
+-- Claim the next batch of queued emails, never more than p_daily sent in the last 24 hours.
+-- Emails claimed by a run that died more than 10 minutes ago go back in the queue. The lock
+-- makes overlapping runs take turns, so the daily limit holds.
+create or replace function public.claim_announcement_sends(p_limit integer, p_daily integer)
+returns table (id bigint, announcement_id bigint, name text, email text, unsub_token text)
+language plpgsql
+set search_path = public
+as $$
+declare
+  sent_today integer;
+  take integer;
+begin
+  perform pg_advisory_xact_lock(727211);
+  update public.announcement_sends s
+  set status = 'pending'
+  where s.status = 'sending' and s.claimed_at < now() - interval '10 minutes';
+  select count(*) into sent_today
+  from public.announcement_sends s
+  where s.sent_at > now() - interval '24 hours';
+  take := greatest(0, least(p_limit, p_daily - sent_today));
+  return query
+    update public.announcement_sends s
+    set status = 'sending', claimed_at = now()
+    where s.id in (
+      select s2.id from public.announcement_sends s2
+      where s2.status = 'pending'
+      order by s2.id
+      limit take
+      for update skip locked
+    )
+    returning s.id, s.announcement_id, s.name, s.email, s.unsub_token;
+end;
+$$;
+
+-- Record one send: sent (and counted), or back in the queue, failing after 3 attempts.
+create or replace function public.finish_announcement_send(p_id bigint, p_ok boolean, p_error text)
+returns void
+language plpgsql
+set search_path = public
+as $$
+declare
+  ann bigint;
+begin
+  if p_ok then
+    update public.announcement_sends s
+    set status = 'sent', sent_at = now(), attempts = s.attempts + 1, error = null
+    where s.id = p_id and s.status = 'sending'
+    returning s.announcement_id into ann;
+    if ann is not null then
+      update public.announcements a set sent_count = a.sent_count + 1 where a.id = ann;
+    end if;
+  else
+    update public.announcement_sends s
+    set attempts = s.attempts + 1,
+        error = left(p_error, 200),
+        status = case when s.attempts + 1 >= 3 then 'failed' else 'pending' end
+    where s.id = p_id and s.status = 'sending';
+  end if;
+end;
+$$;
+
+-- Unsubscribe the person behind an unsubscribe link; their queued emails are skipped.
+create or replace function public.unsubscribe_by_token(p_token text)
+returns text
+language plpgsql
+set search_path = public
+as $$
+declare
+  who text;
+begin
+  select s.email into who from public.announcement_sends s where s.unsub_token = p_token;
+  if who is null then
+    return null;
+  end if;
+  insert into public.unsubscribes (email) values (who) on conflict (email) do nothing;
+  update public.announcement_sends s set status = 'skipped'
+  where s.email = who and s.status = 'pending';
+  return who;
+end;
+$$;
+
+-- Add people from an Excel import. p_people is a JSON array of {name, email}. Counts:
+-- added (new), existing (already on the list) and unsubscribed (not added back).
+create or replace function public.import_contacts(p_people jsonb, p_label text)
+returns table (added integer, existing integer, unsubscribed integer)
+language plpgsql
+set search_path = public
+as $$
+declare
+  total integer;
+  blocked integer;
+  inserted integer;
+begin
+  create temp table import_in on commit drop as
+    select distinct on (lower(trim(x->>'email')))
+      coalesce(trim(x->>'name'), '') as name, lower(trim(x->>'email')) as email
+    from jsonb_array_elements(p_people) x
+    where coalesce(trim(x->>'email'), '') <> '';
+  select count(*) into total from import_in;
+  select count(*) into blocked from import_in i
+  where exists (select 1 from public.unsubscribes u where u.email = i.email);
+  insert into public.contacts (name, email, source)
+  select i.name, i.email, p_label from import_in i
+  where not exists (select 1 from public.unsubscribes u where u.email = i.email)
+    and not exists (select 1 from public.reservations r where r.email = i.email and r.updates)
+  on conflict (email) do nothing;
+  get diagnostics inserted = row_count;
+  return query select inserted, total - inserted - blocked, blocked;
+end;
+$$;
+
+revoke execute on function public.updates_audience(text, text, integer) from public, anon, authenticated;
+revoke execute on function public.publish_announcement(bigint, text) from public, anon, authenticated;
+revoke execute on function public.claim_announcement_sends(integer, integer) from public, anon, authenticated;
+revoke execute on function public.finish_announcement_send(bigint, boolean, text) from public, anon, authenticated;
+revoke execute on function public.unsubscribe_by_token(text) from public, anon, authenticated;
+revoke execute on function public.import_contacts(jsonb, text) from public, anon, authenticated;
+grant execute on function public.updates_audience(text, text, integer) to service_role;
+grant execute on function public.publish_announcement(bigint, text) to service_role;
+grant execute on function public.claim_announcement_sends(integer, integer) to service_role;
+grant execute on function public.finish_announcement_send(bigint, boolean, text) to service_role;
+grant execute on function public.unsubscribe_by_token(text) to service_role;
+grant execute on function public.import_contacts(jsonb, text) to service_role;
 
 alter table public.events enable row level security;
 alter table public.reservations enable row level security;

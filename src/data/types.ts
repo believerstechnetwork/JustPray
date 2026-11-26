@@ -49,12 +49,41 @@ export interface Announcement extends Omit<UpcomingEvent, 'id'> {
   publishedAt: string | null;
   sentCount: number;
   recipients: number;
+  audience: AudienceScope | null;
   createdAt: string;
+}
+
+/** Who an announcement goes to: people who booked (and asked for updates), imported, or both. */
+export type AudienceScope = 'all' | 'booked' | 'imported';
+
+export interface AudienceMember {
+  name: string;
+  email: string;
+  /** "Booked a seat", or the label of the import they came from. */
+  source: string;
+}
+
+export interface AnnouncementsInfo {
+  announcements: Announcement[];
+  audience: number;
+  counts: Record<AudienceScope, number>;
+  /** Default address for "Send a test to me". */
+  testTo: string;
+  dailyLimit: number;
+  /** Which email service is on, or null when email is off. */
+  email: string | null;
+}
+
+export interface ImportOutcome {
+  added: number;
+  existing: number;
+  unsubscribed: number;
+  invalid: number;
 }
 
 export type AnnouncementForm = Omit<
   Announcement,
-  'id' | 'status' | 'publishedAt' | 'sentCount' | 'recipients' | 'createdAt'
+  'id' | 'status' | 'publishedAt' | 'sentCount' | 'recipients' | 'audience' | 'createdAt'
 >;
 
 export interface PublicInfo {

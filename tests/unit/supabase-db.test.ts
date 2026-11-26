@@ -354,6 +354,61 @@ describe('SupabaseDb', () => {
     expect(await db.eventById(4)).toBeNull();
   });
 
+  it('publishes, claims, finishes and imports through the database functions', async () => {
+    const { db, seen } = fakeSupabase([
+      {
+        body: [
+          { id: 5, title: 'T', date: '2027-09-09', status: 'published', audience: 'imported' },
+        ],
+      },
+      { body: [{ id: 9, announcement_id: 5, name: 'Ada', email: 'a@b.co', unsub_token: 'tok' }] },
+      { body: null },
+      { body: [{ added: 2, existing: 1, unsubscribed: 0 }] },
+      { body: 'a@b.co' },
+    ]);
+    expect(await db.publishAnnouncement(5, 'imported')).toMatchObject({
+      id: 5,
+      audience: 'imported',
+    });
+    expect(seen[0]).toMatchObject({
+      path: '/rest/v1/rpc/publish_announcement',
+      body: { p_id: 5, p_scope: 'imported' },
+    });
+    expect(await db.claimOutbox(20, 350)).toEqual([
+      { id: 9, announcementId: 5, name: 'Ada', email: 'a@b.co', unsubToken: 'tok' },
+    ]);
+    expect(seen[1]?.body).toEqual({ p_limit: 20, p_daily: 350 });
+    await db.finishOutbox(9, false, 'smtp');
+    expect(seen[2]).toMatchObject({
+      path: '/rest/v1/rpc/finish_announcement_send',
+      body: { p_id: 9, p_ok: false, p_error: 'smtp' },
+    });
+    expect(await db.importContacts([{ name: 'A', email: 'a@b.co' }], 'Sheet')).toEqual({
+      added: 2,
+      existing: 1,
+      unsubscribed: 0,
+    });
+    expect(seen[3]?.body).toEqual({ p_people: [{ name: 'A', email: 'a@b.co' }], p_label: 'Sheet' });
+    expect(await db.unsubscribe('tok')).toBe('a@b.co');
+  });
+
+  it('reads the whole mailing list a page at a time, by email', async () => {
+    const page = (from: number, count: number) =>
+      Array.from({ length: count }, (_, i) => ({
+        name: 'N',
+        email: `p${String(from + i).padStart(5, '0')}@x.co`,
+        source: 'Sheet',
+      }));
+    const { db, seen } = fakeSupabase([
+      { body: page(0, 1000) },
+      { body: page(1000, 3) },
+      { body: [] },
+    ]);
+    expect(await db.updatesAudience('imported')).toHaveLength(1003);
+    expect(seen[0]?.body).toEqual({ p_scope: 'imported', p_after: '', p_limit: 1000 });
+    expect(seen[1]?.body).toMatchObject({ p_after: 'p00999@x.co' });
+  });
+
   it('maps contribution rows', async () => {
     const row = {
       id: 2,

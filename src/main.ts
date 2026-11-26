@@ -15,6 +15,8 @@ import {
   type Theme,
 } from './state';
 import { previewInner } from './views/announcements';
+import { unsubscribe } from './views/unsubscribe';
+import { readContactsFile } from './lib/contacts';
 import { admin } from './views/admin';
 import { cancel } from './views/cancel';
 import { confirmed } from './views/confirmed';
@@ -29,6 +31,7 @@ const views: Record<Route, () => string> = {
   support,
   admin,
   cancel,
+  unsubscribe,
 };
 const TITLES: Record<Route, string> = {
   home: 'Just Pray: a free monthly prayer gathering for people in tech',
@@ -37,6 +40,7 @@ const TITLES: Record<Route, string> = {
   support: 'Support the gathering · Just Pray',
   admin: 'Organiser · Just Pray',
   cancel: 'Cancel your seat · Just Pray',
+  unsubscribe: 'Unsubscribe · Just Pray',
 };
 const THEME_KEY = 'jp:theme';
 
@@ -66,7 +70,8 @@ type Field = HTMLInputElement | HTMLTextAreaElement;
  *  cursor was, so a data refresh or an error message never wipes a half-filled form. */
 function snapshot(): { values: Map<string, string | boolean>; focus: string | null } {
   const values = new Map<string, string | boolean>();
-  page.querySelectorAll<Field>('input[id], textarea[id]').forEach((el) => {
+  // File inputs are skipped: browsers do not let a page set a chosen file back.
+  page.querySelectorAll<Field>('input[id]:not([type="file"]), textarea[id]').forEach((el) => {
     values.set(
       el.id,
       el instanceof HTMLInputElement && el.type === 'checkbox' ? el.checked : el.value,
@@ -187,6 +192,63 @@ async function loadCancel(token: string): Promise<void> {
   if (S.page === 'cancel') render();
 }
 
+async function confirmUnsubscribe(): Promise<void> {
+  if (S.busy) return;
+  S.busy = true;
+  render();
+  try {
+    await api.unsubscribe(S.unsub.token);
+    S.unsub.state = 'done';
+  } catch (e) {
+    S.unsub.state = 'error';
+    S.unsub.error = errorMessage(e);
+  }
+  S.busy = false;
+  render();
+}
+
+/** Read a chosen Excel or CSV file in the browser, for the organiser to check before importing. */
+async function readImportFile(input: HTMLInputElement): Promise<void> {
+  const file = input.files?.[0];
+  if (!file) return;
+  S.ann.error = '';
+  S.busy = true;
+  render();
+  try {
+    const parsed = await readContactsFile(file);
+    S.ann.importing = {
+      file: file.name,
+      ...parsed,
+      label: file.name.replace(/\.(xlsx|csv)$/i, ''),
+      result: null,
+    };
+    if (!parsed.contacts.length)
+      S.ann.error = 'No email addresses were found in that file. Check it has a column of emails.';
+  } catch {
+    S.ann.error = 'That file could not be read. Save it as .xlsx or .csv and try again.';
+  }
+  S.busy = false;
+  freshForm = true;
+  render();
+}
+
+async function submitImport(data: FormData): Promise<void> {
+  const im = S.ann.importing;
+  if (!im || S.busy) return;
+  im.label = String(data.get('label') ?? '').trim();
+  S.busy = true;
+  S.ann.error = '';
+  render();
+  try {
+    im.result = await api.importContacts(im.contacts, im.label || im.file);
+    void loadAnnouncements();
+  } catch (e) {
+    S.ann.error = errorMessage(e);
+  }
+  S.busy = false;
+  render();
+}
+
 async function cancelSeat(): Promise<void> {
   const token = S.cancel.token;
   if (S.busy || !token) return;
@@ -214,6 +276,13 @@ async function cancelSeat(): Promise<void> {
 
 function applyRoute(): void {
   const route = routeFromHash();
+  if (route === 'unsubscribe') {
+    const token = hashParts()[1] ?? '';
+    if (token !== S.unsub.token || !token)
+      S.unsub = token
+        ? { token, state: 'ask', error: '' }
+        : { token: '', state: 'error', error: '' };
+  }
   if (route === 'cancel') {
     const token = hashParts()[1] ?? '';
     if (!token)
@@ -273,6 +342,10 @@ async function loadAnnouncements(): Promise<void> {
     const res = await api.announcements();
     S.ann.list = res.announcements;
     S.ann.audience = res.audience;
+    S.ann.counts = res.counts;
+    S.ann.dailyLimit = res.dailyLimit;
+    // Keep an address the organiser typed; otherwise suggest the organisers' inbox.
+    if (!S.ann.testTo) S.ann.testTo = res.testTo;
   } catch (e) {
     S.ann.error = errorMessage(e);
     if (e instanceof ApiError && e.status === 401) S.adminAuthed = false;
@@ -376,15 +449,54 @@ async function annAction(action: string, el: HTMLElement): Promise<void> {
       return render();
     case 'ann-back':
       a.editing = null;
+      a.panel = 'list';
+      a.importing = null;
       a.error = a.notice = '';
       render();
       return loadAnnouncements();
+    case 'ann-people':
+      a.panel = 'people';
+      a.people = null;
+      a.error = '';
+      render();
+      try {
+        a.people = (await api.audience()).people;
+      } catch (e) {
+        a.error = errorMessage(e);
+        a.people = [];
+      }
+      return render();
+    case 'ann-import':
+      a.panel = 'import';
+      a.importing = null;
+      a.error = '';
+      return render();
+    case 'ann-test': {
+      if (S.busy) return;
+      syncAnnForm();
+      a.testTo =
+        (document.getElementById('an-test') as HTMLInputElement | null)?.value.trim() ?? '';
+      S.busy = true;
+      a.error = a.notice = '';
+      render();
+      try {
+        await api.testAnnouncement(a.form, a.testTo);
+        a.notice = `Test sent to ${a.testTo}. Check that inbox, and its spam folder.`;
+      } catch (e) {
+        a.error = errorMessage(e);
+      }
+      S.busy = false;
+      return render();
+    }
     case 'ann-publish': {
       if (S.busy) return;
       S.busy = true;
       const id = await saveAnnouncement();
       S.busy = false;
-      if (id !== null) a.confirming = true;
+      if (id !== null) {
+        a.confirming = true;
+        a.send = { booked: true, imported: true };
+      }
       return render();
     }
     case 'ann-cancel':
@@ -395,7 +507,9 @@ async function annAction(action: string, el: HTMLElement): Promise<void> {
       S.busy = true;
       render();
       try {
-        const { announcement } = await api.publishAnnouncement(a.editing);
+        const scope =
+          a.send.booked && a.send.imported ? 'all' : a.send.booked ? 'booked' : 'imported';
+        const { announcement } = await api.publishAnnouncement(a.editing, scope);
         a.list = (a.list ?? []).map((x) => (x.id === announcement.id ? announcement : x));
         a.confirming = false;
         a.editing = null;
@@ -496,6 +610,8 @@ document.addEventListener('click', async (e) => {
     S.adminError = '';
     if (S.tab === 'announcements') {
       S.ann.editing = null;
+      S.ann.panel = 'list';
+      S.ann.importing = null;
       void loadAnnouncements();
     }
     return render();
@@ -554,6 +670,8 @@ document.addEventListener('click', async (e) => {
       return loadAdmin();
     case 'cancel-seat':
       return cancelSeat();
+    case 'unsub-confirm':
+      return confirmUnsubscribe();
   }
 });
 
@@ -692,6 +810,10 @@ document.addEventListener('submit', (e) => {
     setTimeout(() => document.getElementById('p')?.focus(), 60);
     return;
   }
+  if (kind === 'import') {
+    void submitImport(data);
+    return;
+  }
   if (kind === 'announcement') {
     void (async () => {
       S.busy = true;
@@ -714,6 +836,16 @@ try {
 } catch {
   /* storage blocked */
 }
+// Choosing an import file, or ticking who an announcement goes to.
+document.addEventListener('change', (e) => {
+  const t = e.target as HTMLInputElement;
+  if (t.matches('[data-ann-file]')) void readImportFile(t);
+  else if (t.matches('[data-ann-send]')) {
+    S.ann.send[t.dataset.annSend as 'booked' | 'imported'] = t.checked;
+    render();
+  }
+});
+
 // Typing in the announcement form redraws its preview only.
 document.addEventListener('input', (e) => {
   const t = e.target as HTMLElement;

@@ -122,6 +122,8 @@ export interface AnnouncementRecord extends AnnouncementFields {
   publishedAt: string | null;
   /** Emails delivered so far. */
   sentCount: number;
+  /** Who it was sent to, once published. */
+  audience: AudienceScope | null;
   /** People it was sent to when published. */
   recipients: number;
   createdAt: string;
@@ -165,12 +167,25 @@ export interface Db {
   createAnnouncement(fields: AnnouncementFields): Promise<AnnouncementRecord>;
   updateAnnouncement(id: number, fields: AnnouncementFields): Promise<AnnouncementRecord | null>;
   deleteDraftAnnouncement(id: number): Promise<boolean>;
-  /** Draft to published, once; null when unknown or already published. */
-  publishAnnouncement(id: number, recipients: number): Promise<AnnouncementRecord | null>;
+  announcementById(id: number): Promise<AnnouncementRecord | null>;
+  /** Draft to published, once, and one outbox email queued per person in `updatesAudience(scope)`,
+   *  in the same step. Null when unknown or already published. */
+  publishAnnouncement(id: number, scope: AudienceScope): Promise<AnnouncementRecord | null>;
+  /** Claim up to `limit` queued emails, never more than `dailyLimit` sent in the last 24 hours.
+   *  Emails claimed by a run that died more than 10 minutes ago are claimed again. */
+  claimOutbox(limit: number, dailyLimit: number): Promise<OutboxItem[]>;
+  /** Record the result of sending one; a failure is retried up to 3 attempts in all. */
+  finishOutbox(id: number, ok: boolean, error?: string): Promise<void>;
+  /** Unsubscribe the person behind an unsubscribe link. Returns their email, or null. */
+  unsubscribe(token: string): Promise<string | null>;
   /** Published events that have not ended by this Lagos date, soonest first. */
   upcomingAnnouncements(todayIso: string, limit: number): Promise<AnnouncementRecord[]>;
-  /** People who asked to hear about future events and have not unsubscribed, one per email. */
-  updatesAudience(): Promise<{ name: string; email: string }[]>;
+  /** Everyone who gets announcements, one per email: people who booked and asked to hear about
+   *  future events ('booked'), imported contacts ('imported'), or both ('all'), less anyone who
+   *  unsubscribed. Someone on both lists is listed once, as "Booked a seat". */
+  updatesAudience(scope?: AudienceScope): Promise<AudienceMember[]>;
+  /** Add imported people to the list. Emails are already checked and lower-case. */
+  importContacts(people: { name: string; email: string }[], label: string): Promise<ImportResult>;
   ping(): Promise<void>;
 }
 
@@ -179,6 +194,39 @@ export interface Email {
   subject: string;
   text: string;
   html: string;
+  /** Extra headers, e.g. List-Unsubscribe on announcements. */
+  headers?: Record<string, string>;
+}
+
+/** Who an announcement goes to: people who booked and asked for updates, imported people, or both. */
+export type AudienceScope = 'all' | 'booked' | 'imported';
+export const AUDIENCE_SCOPES: readonly AudienceScope[] = ['all', 'booked', 'imported'];
+
+/** Someone who gets announcements, and how they joined the list. */
+export interface AudienceMember {
+  name: string;
+  email: string;
+  /** "Booked a seat", or the label given to an Excel import. */
+  source: string;
+}
+
+export interface ImportResult {
+  /** Newly added to the list. */
+  added: number;
+  /** Already on the list (imported before, or booked and asked for updates). */
+  existing: number;
+  /** Unsubscribed earlier, so not added back. */
+  unsubscribed: number;
+}
+
+/** One announcement email waiting in the outbox, claimed for sending. */
+export interface OutboxItem {
+  id: number;
+  announcementId: number;
+  name: string;
+  email: string;
+  /** Private token for this person's unsubscribe link. */
+  unsubToken: string;
 }
 
 export interface Mailer {

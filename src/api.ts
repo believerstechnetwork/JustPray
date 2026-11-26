@@ -2,6 +2,10 @@ import type {
   AdminData,
   Announcement,
   AnnouncementForm,
+  AnnouncementsInfo,
+  AudienceMember,
+  AudienceScope,
+  ImportOutcome,
   BankDetails,
   CancelInfo,
   Contribution,
@@ -63,15 +67,22 @@ export const api = {
   adminData: () => call<AdminData>('GET', 'admin/data'),
   saveEvent: (event: GatheringEvent) =>
     call<{ event: GatheringEvent }>('PUT', 'admin/event', event),
-  announcements: () =>
-    call<{ announcements: Announcement[]; audience: number }>('GET', 'admin/announcements'),
+  announcements: () => call<AnnouncementsInfo>('GET', 'admin/announcements'),
+  audience: () => call<{ people: AudienceMember[] }>('GET', 'admin/audience'),
+  importContacts: (people: { name: string; email: string }[], label: string) =>
+    call<ImportOutcome>('POST', 'admin/contacts/import', { people, label }),
+  testAnnouncement: (form: AnnouncementForm, to: string) =>
+    call<{ ok: true }>('POST', 'admin/announcements/test', { ...form, to }),
+  unsubscribe: (token: string) => call<{ ok: true }>('POST', 'unsubscribe', { token }),
   createAnnouncement: (form: AnnouncementForm) =>
     call<{ announcement: Announcement }>('POST', 'admin/announcements', form),
   updateAnnouncement: (id: number, form: AnnouncementForm) =>
     call<{ announcement: Announcement }>('PUT', `admin/announcements/${id}`, form),
   deleteAnnouncement: (id: number) => call<{ ok: true }>('DELETE', `admin/announcements/${id}`),
-  publishAnnouncement: (id: number) =>
-    call<{ announcement: Announcement }>('POST', `admin/announcements/${id}/publish`, {}),
+  publishAnnouncement: (id: number, audience: AudienceScope) =>
+    call<{ announcement: Announcement }>('POST', `admin/announcements/${id}/publish`, {
+      audience,
+    }),
   setContributionStatus: (id: number, status: Contribution['status']) =>
     call<{ contribution: Contribution }>('POST', `admin/contributions/${id}`, { status }),
 };

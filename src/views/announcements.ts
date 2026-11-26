@@ -100,15 +100,76 @@ const PHOTOS: ReadonlyArray<[keyof typeof IMG, string]> = [
 ];
 const photoUrl = (k: keyof typeof IMG): string => new URL(IMG[k], location.origin).href;
 
+const people = (n: number): string =>
+  `${n.toLocaleString('en-GB')} ${n === 1 ? 'person' : 'people'}`;
+
+/** "Emailed to 412 people", or "Sending: 120 of 412" while the outbox works through it. */
+const progress = (x: Announcement): string =>
+  x.sentCount < x.recipients
+    ? `Sending: ${x.sentCount.toLocaleString('en-GB')} of ${people(x.recipients)}`
+    : `Emailed to ${people(x.recipients)}`;
+
 const statusOf = (x: Announcement): string => {
   const ended = (x.endDate ?? x.date) < new Date().toISOString().slice(0, 10);
   if (x.status === 'draft') return '<span class="status mute">Draft</span>';
-  if (ended) return '<span class="status mute">Ended</span>';
-  return `<span class="status ok">Published</span><small>Emailed to ${x.recipients} ${x.recipients === 1 ? 'person' : 'people'}</small>`;
+  return `<span class="status ${ended ? 'mute' : x.sentCount < x.recipients ? 'warn' : 'ok'}">${ended ? 'Ended' : 'Published'}</span><small>${progress(x)}</small>`;
 };
+
+/** The mailing list: how many people announcements reach, and where they came from. */
+function mailingList(): string {
+  const { counts } = S.ann;
+  return `<div class="block"><div class="block-h"><h2>Mailing list</h2><div class="btns"><button class="btn small ghost" type="button" data-action="ann-people">See everyone</button><button class="btn small ind" type="button" data-action="ann-import">Import from Excel</button></div></div>
+  <div class="ml-nums"><div><strong>${counts.all.toLocaleString('en-GB')}</strong><span>on the list</span></div><div><strong>${counts.booked.toLocaleString('en-GB')}</strong><span>booked a seat and asked for updates</span></div><div><strong>${counts.imported.toLocaleString('en-GB')}</strong><span>imported from Excel</span></div></div>
+  <p class="fine" style="margin-top:12px">Anyone who unsubscribes is taken off and never added back. Someone on both lists counts once.</p></div>`;
+}
+
+function peoplePanel(): string {
+  const list = S.ann.people;
+  const rows = (list ?? [])
+    .map(
+      (p) =>
+        `<tr><td data-label="Name"><b>${esc(p.name || '–')}</b></td><td data-label="Email">${esc(p.email)}</td><td data-label="From">${esc(p.source)}</td></tr>`,
+    )
+    .join('');
+  return `<p class="ann-back"><button class="link" type="button" data-action="ann-back">${ICON.back}Back to announcements</button></p>
+<div class="block"><div class="block-h"><h2>Mailing list${list ? `<small> · ${people(list.length)}</small>` : ''}</h2><button class="btn small ind" type="button" data-action="ann-import">Import from Excel</button></div>
+ ${list === null ? '<div class="spin"></div>' : list.length ? `<div class="tw"><table class="cards"><thead><tr><th>Name</th><th>Email</th><th>From</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="empty"><h3>No one yet</h3><p>People who book a seat and tick “Tell me about future gatherings” appear here, and so do people you import.</p></div>'}</div>`;
+}
+
+function importPanel(): string {
+  const im = S.ann.importing;
+  const back = `<p class="ann-back"><button class="link" type="button" data-action="ann-back">${ICON.back}Back to announcements</button></p>`;
+  if (!im)
+    return `${back}<div class="block imp"><h2>Import from Excel</h2>
+  <p>Choose an Excel (.xlsx) or CSV file with a column of email addresses, and names if you have them. The first row can be headings such as “Name” and “Email”.</p>
+  <label class="btn ind imp-pick" for="imp-file">Choose a file</label><input id="imp-file" class="sr" type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" data-ann-file>
+  ${S.ann.error ? `<p class="err" role="alert">${esc(S.ann.error)}</p>` : ''}
+  <p class="fine">Only import people who gave Believers Tech Network their email, for example past conference attendees. Everyone gets an unsubscribe link in each email.</p></div>`;
+  if (im.result) {
+    const r = im.result;
+    return `${back}<div class="block imp"><h2>Import complete</h2>
+  <ul class="imp-sum"><li><strong>${r.added.toLocaleString('en-GB')}</strong> added to the mailing list</li>${r.existing ? `<li><strong>${r.existing.toLocaleString('en-GB')}</strong> already on the list</li>` : ''}${r.unsubscribed ? `<li><strong>${r.unsubscribed.toLocaleString('en-GB')}</strong> unsubscribed earlier, so left off</li>` : ''}${r.invalid + im.invalid ? `<li><strong>${(r.invalid + im.invalid).toLocaleString('en-GB')}</strong> rows without a valid email</li>` : ''}</ul>
+  <div class="ann-actions"><button class="btn ind" type="button" data-action="ann-people">See the mailing list</button><button class="link" type="button" data-action="ann-back">Back to announcements</button></div></div>`;
+  }
+  const sample = im.contacts
+    .slice(0, 6)
+    .map(
+      (c) =>
+        `<tr><td data-label="Name">${esc(c.name || '–')}</td><td data-label="Email">${esc(c.email)}</td></tr>`,
+    )
+    .join('');
+  return `${back}<form class="block imp" data-form="import"><h2>Check the list</h2>
+  <p><b>${esc(im.file)}</b>: ${people(im.contacts.length)} with a valid email${im.duplicates ? `, ${im.duplicates} repeated ${im.duplicates === 1 ? 'row' : 'rows'} counted once` : ''}${im.invalid ? `, ${im.invalid} ${im.invalid === 1 ? 'row' : 'rows'} without a valid email left out` : ''}.</p>
+  ${im.contacts.length ? `<div class="tw"><table class="cards"><thead><tr><th>Name</th><th>Email</th></tr></thead><tbody>${sample}</tbody></table></div>${im.contacts.length > 6 ? `<p class="fine">and ${people(im.contacts.length - 6)} more.</p>` : ''}` : ''}
+  <div class="field"><label for="imp-label">Label for this list</label><input id="imp-label" name="label" maxlength="80" value="${esc(im.label)}" placeholder="BTN Conference 2026 attendees"><span class="hint">Shown in the mailing list as where these people came from.</span></div>
+  ${S.ann.error ? `<p class="err" role="alert">${esc(S.ann.error)}</p>` : ''}
+  <div class="ann-actions"><button class="btn ind" type="submit"${S.busy || !im.contacts.length ? ' disabled' : ''}>${S.busy ? 'Importing…' : `Import ${people(im.contacts.length)}`}</button><button class="link" type="button" data-action="ann-import">Choose another file</button></div></form>`;
+}
 
 function list(): string {
   const a = S.ann;
+  if (a.panel === 'people') return peoplePanel();
+  if (a.panel === 'import') return importPanel();
   const rows = (a.list ?? [])
     .map(
       (x) =>
@@ -116,8 +177,10 @@ function list(): string {
     )
     .join('');
   return `<div class="block"><div class="block-h"><h2>Other BTN events</h2><button class="btn small ind" type="button" data-action="ann-new">New announcement</button></div>
-  <p class="fine" style="margin:0 0 6px">For events beyond the monthly gathering, such as a conference. Publishing one emails the <b>${a.audience}</b> ${a.audience === 1 ? 'person' : 'people'} who asked to hear about future events, and lists it on the home page until it ends.</p>
-  ${a.list === null ? '<div class="spin"></div>' : rows || '<div class="empty"><h3>No announcements yet</h3><p>Announce a conference or another BTN event to everyone who asked to hear about them.</p></div>'}</div>`;
+  ${a.notice ? `<p class="fine" role="status" style="margin:0 0 6px">${esc(a.notice)}</p>` : ''}
+  <p class="fine" style="margin:0 0 6px">For events beyond the monthly gathering, such as a conference. Publishing one emails your mailing list and lists the event on the home page until it ends.</p>
+  ${a.list === null ? '<div class="spin"></div>' : rows || '<div class="empty"><h3>No announcements yet</h3><p>Announce a conference or another BTN event to your mailing list.</p></div>'}</div>
+  ${mailingList()}`;
 }
 
 const val = (v: string | null | undefined): string => esc(v ?? '');
@@ -138,7 +201,7 @@ function editor(): string {
 <div class="ann-edit">
  <form class="block ann-form" data-form="announcement" novalidate>
   <h2>${published ? esc(current?.title ?? '') : a.editing === 'new' ? 'New announcement' : 'Edit draft'}</h2>
-  ${published ? `<div class="notice" role="note">Emailed to ${current?.recipients ?? 0} people. Changes here update the home page only; the email has already gone out.</div>` : ''}
+  ${published && current ? `<div class="notice" role="note">${progress(current)}. Changes here update the home page only; the email has already gone out.</div>` : ''}
   <h3>The event</h3>
   <div class="field"><label for="an-title">Title</label><input id="an-title" name="title" required maxlength="120" value="${val(f.title)}" placeholder="BTN Conference 2027"></div>
   <div class="formgrid"><div class="field"><label for="an-date">Date</label><input id="an-date" name="date" type="date" required value="${val(f.date)}"></div><div class="field"><label for="an-end">Last day <span class="opt">(optional)</span></label><input id="an-end" name="endDate" type="date" value="${val(f.endDate)}"></div></div>
@@ -156,7 +219,8 @@ function editor(): string {
   ${
     published
       ? `<div class="ann-actions"><button class="btn ind" type="submit"${S.busy ? ' disabled' : ''}>Save changes</button></div>`
-      : `<div class="ann-aud">${ICON.users}<p>Publishing emails this to <b>${a.audience} ${a.audience === 1 ? 'person' : 'people'}</b> who asked to hear about future events, and lists it on the home page until ${esc(until)}.</p></div>
+      : `<div class="ann-test"><label for="an-test">Send a test to</label><div><input id="an-test" type="email" value="${esc(a.testTo)}" placeholder="you@example.com"><button class="btn small ghost" type="button" data-action="ann-test"${S.busy ? ' disabled' : ''}>Send test</button></div></div>
+  <div class="ann-aud">${ICON.users}<p>Publishing emails your mailing list (you choose who on the next step) and lists it on the home page until ${esc(until)}.</p></div>
   <div class="ann-actions"><button class="btn ind" type="button" data-action="ann-publish"${S.busy ? ' disabled' : ''}>Publish…</button><button class="btn ghost" type="submit"${S.busy ? ' disabled' : ''}>Save draft</button>${typeof a.editing === 'number' ? '<button class="link" type="button" data-action="ann-delete">Delete draft</button>' : ''}</div>`
   }
  </form>
@@ -168,11 +232,30 @@ function editor(): string {
 ${a.confirming ? confirmDialog() : ''}`;
 }
 
+/** How many people the chosen lists reach (someone on both counts once). */
+export function sendCount(): number {
+  const { send, counts } = S.ann;
+  return send.booked && send.imported
+    ? counts.all
+    : send.booked
+      ? counts.booked
+      : send.imported
+        ? counts.imported
+        : 0;
+}
+
 function confirmDialog(): string {
   const a = S.ann;
+  const n = sendCount();
+  const box = (k: 'booked' | 'imported', label: string, count: number) =>
+    `<label class="check"><input type="checkbox" data-ann-send="${k}"${a.send[k] ? ' checked' : ''}><span>${label} <b>(${count.toLocaleString('en-GB')})</b></span></label>`;
+  const days = Math.ceil(n / Math.max(1, a.dailyLimit));
   return `<div class="share-bd"><div class="share" role="dialog" aria-modal="true" aria-labelledby="ann-c-h"><h3 id="ann-c-h">Publish “${esc(a.form.title)}”?</h3>
-  <p>It will be emailed to <b>${a.audience} ${a.audience === 1 ? 'person' : 'people'}</b> and appear on the home page. An email cannot be called back once sent.</p>
-  <div class="actions"><button class="btn ind" type="button" data-action="ann-confirm"${S.busy ? ' disabled' : ''}>${S.busy ? 'Publishing…' : `Publish and email ${a.audience}`}</button><button class="link" type="button" data-action="ann-cancel">Cancel</button></div></div></div>`;
+  <p>Send the email to:</p>
+  <div class="ann-send">${box('booked', 'People who booked a seat and asked for updates', a.counts.booked)}${box('imported', 'People imported from Excel', a.counts.imported)}</div>
+  <p>It will be emailed to <b>${people(n)}</b> and appear on the home page.${days > 1 ? ` To stay within the daily email limit, sending takes about ${days} days.` : ''} An email cannot be called back once sent.</p>
+  ${a.error ? `<p class="err" role="alert">${esc(a.error)}</p>` : ''}
+  <div class="actions"><button class="btn ind" type="button" data-action="ann-confirm"${S.busy || n === 0 ? ' disabled' : ''}>${S.busy ? 'Publishing…' : n === 0 ? 'Choose who to send to' : `Publish and email ${n.toLocaleString('en-GB')}`}</button><button class="link" type="button" data-action="ann-cancel">Cancel</button></div></div></div>`;
 }
 
 export function announcementsTab(): string {

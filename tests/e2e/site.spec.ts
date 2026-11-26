@@ -322,3 +322,85 @@ test('no horizontal scroll on the home page', async ({ page }) => {
   );
   expect(overflow).toBeLessThanOrEqual(1);
 });
+
+test('organiser imports people from a CSV file and sees them on the mailing list', async ({
+  page,
+}) => {
+  const tag = Math.random().toString(36).slice(2, 8);
+  await signIn(page);
+  await page.getByRole('button', { name: 'Announcements', exact: true }).click();
+  await page.getByRole('button', { name: 'Import from Excel' }).click();
+  await page.locator('#imp-file').setInputFiles({
+    name: 'conference.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from(
+      `Name,Email\nImported ${tag},imp-${tag}@example.com\nNo Email,\nTwice,imp-${tag}@example.com\n`,
+    ),
+  });
+  await expect(page.getByRole('heading', { name: 'Check the list' })).toBeVisible();
+  await expect(page.getByText('1 person with a valid email')).toBeVisible();
+  await page.getByLabel('Label for this list').fill(`Conference ${tag}`);
+  await page.getByRole('button', { name: 'Import 1 person' }).click();
+  await expect(page.getByRole('heading', { name: 'Import complete' })).toBeVisible();
+  await expect(page.locator('.imp-sum')).toContainText('1 added to the mailing list');
+  await page.getByRole('button', { name: 'See the mailing list' }).click();
+  const row = page.getByRole('row').filter({ hasText: `imp-${tag}@example.com` });
+  await expect(row).toContainText(`Conference ${tag}`);
+});
+
+test('organiser previews, tests and publishes an announcement that then shows on the home page', async ({
+  page,
+}) => {
+  const tag = Math.random().toString(36).slice(2, 6);
+  const title = `BTN Retreat ${tag}`;
+  await signIn(page);
+  // Someone on the imported list, so there is at least one person to send to.
+  const added = await page.request.post('/api/admin/contacts/import', {
+    data: { label: 'e2e', people: [{ name: 'E2E Person', email: `e2e-${tag}@example.com` }] },
+  });
+  expect(added.ok()).toBe(true);
+  await page.getByRole('button', { name: 'Announcements', exact: true }).click();
+  await page.getByRole('button', { name: 'New announcement' }).click();
+  await page.getByLabel('Title', { exact: true }).fill(title);
+  await page.getByLabel('Date', { exact: true }).fill('2099-09-09');
+  await page.getByLabel('Venue to be announced').check();
+  await page.getByLabel('Theme to be announced').check();
+  await page.getByLabel('Summary', { exact: true }).fill('A weekend of prayer.');
+  await page.getByLabel('Subject', { exact: true }).fill(`Save the date: ${title}`);
+  await page.getByLabel('Message', { exact: true }).fill('Hi {first name},\n\nJoin us.');
+  // The live preview is the email itself.
+  await expect(
+    page.frameLocator('iframe.mail').getByRole('heading', { name: title }),
+  ).toBeVisible();
+  await expect(page.frameLocator('iframe.mail').getByText('Hi Ada,')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Send test' }).click();
+  await expect(page.getByText(/Test sent to organisers@example.com/)).toBeVisible();
+
+  await page.getByRole('button', { name: 'Publish…' }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel(/People who booked a seat/).uncheck();
+  await dialog.getByLabel(/People imported from Excel/).uncheck();
+  await expect(dialog.getByRole('button', { name: 'Choose who to send to' })).toBeDisabled();
+  await dialog.getByLabel(/People imported from Excel/).check();
+  await dialog.getByRole('button', { name: /Publish and email/ }).click();
+  await expect(page.getByText(title)).toBeVisible();
+
+  await page.goto('/#/home');
+  await page.reload();
+  const card = page.locator('.up-card').filter({ hasText: title });
+  await expect(card).toBeVisible();
+  await expect(card).toContainText('Theme to be announced');
+  await expect(card).toContainText('Venue to be announced');
+});
+
+test('a broken unsubscribe link says so', async ({ page }) => {
+  await page.goto('/#/unsubscribe/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+  await page.reload();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Unsubscribe?');
+  await page.getByRole('button', { name: 'Unsubscribe' }).click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('This link isn’t working.');
+  await page.goto('/#/unsubscribe');
+  await page.reload();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('This link isn’t working.');
+});

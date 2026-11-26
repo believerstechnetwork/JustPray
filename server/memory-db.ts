@@ -1,6 +1,9 @@
+import { randomBytes } from 'node:crypto';
 import type {
   AnnouncementFields,
   AnnouncementRecord,
+  AudienceMember,
+  AudienceScope,
   CancelLookup,
   ContributionRecord,
   ContributionStatus,
@@ -34,6 +37,19 @@ export class MemoryDb implements Db {
   announcements: AnnouncementRecord[] = [];
   /** Emails that unsubscribed from announcements. */
   unsubscribed = new Set<string>();
+  /** People added from an Excel import. */
+  contacts: AudienceMember[] = [];
+  outbox: {
+    id: number;
+    announcementId: number;
+    name: string;
+    email: string;
+    unsubToken: string;
+    status: 'pending' | 'sending' | 'sent' | 'failed' | 'skipped';
+    attempts: number;
+    claimedAt: number;
+    sentAt: number | null;
+  }[] = [];
   private nextId = 1;
   private readonly now: () => Date;
 
@@ -198,6 +214,7 @@ export class MemoryDb implements Db {
       status: 'draft',
       publishedAt: null,
       sentCount: 0,
+      audience: null,
       recipients: 0,
       createdAt: this.now().toISOString(),
     };
@@ -222,11 +239,73 @@ export class MemoryDb implements Db {
     return true;
   }
 
-  async publishAnnouncement(id: number, recipients: number): Promise<AnnouncementRecord | null> {
+  async announcementById(id: number): Promise<AnnouncementRecord | null> {
+    const a = this.announcements.find((x) => x.id === id);
+    return a ? { ...a } : null;
+  }
+
+  async publishAnnouncement(id: number, scope: AudienceScope): Promise<AnnouncementRecord | null> {
     const a = this.announcements.find((x) => x.id === id);
     if (!a || a.status !== 'draft') return null;
-    Object.assign(a, { status: 'published', publishedAt: this.now().toISOString(), recipients });
+    const people = await this.updatesAudience(scope);
+    for (const p of people)
+      this.outbox.push({
+        id: this.nextId++,
+        announcementId: id,
+        name: p.name,
+        email: p.email,
+        unsubToken: randomBytes(24).toString('base64url'),
+        status: 'pending',
+        attempts: 0,
+        claimedAt: 0,
+        sentAt: null,
+      });
+    Object.assign(a, {
+      status: 'published',
+      publishedAt: this.now().toISOString(),
+      recipients: people.length,
+      audience: scope,
+    });
     return { ...a };
+  }
+
+  async claimOutbox(limit: number, dailyLimit: number) {
+    const now = this.now().getTime();
+    for (const o of this.outbox)
+      if (o.status === 'sending' && now - o.claimedAt > 10 * 60_000) o.status = 'pending';
+    const sentToday = this.outbox.filter(
+      (o) => o.sentAt !== null && now - o.sentAt < 86_400_000,
+    ).length;
+    const n = Math.max(0, Math.min(limit, dailyLimit - sentToday));
+    const claimed = this.outbox.filter((o) => o.status === 'pending').slice(0, n);
+    for (const o of claimed) Object.assign(o, { status: 'sending', claimedAt: now });
+    return claimed.map((o) => ({
+      id: o.id,
+      announcementId: o.announcementId,
+      name: o.name,
+      email: o.email,
+      unsubToken: o.unsubToken,
+    }));
+  }
+
+  async finishOutbox(id: number, ok: boolean): Promise<void> {
+    const o = this.outbox.find((x) => x.id === id);
+    if (!o) return;
+    o.attempts++;
+    if (ok) {
+      Object.assign(o, { status: 'sent', sentAt: this.now().getTime() });
+      const a = this.announcements.find((x) => x.id === o.announcementId);
+      if (a) a.sentCount++;
+    } else o.status = o.attempts >= 3 ? 'failed' : 'pending';
+  }
+
+  async unsubscribe(token: string): Promise<string | null> {
+    const o = this.outbox.find((x) => x.unsubToken === token);
+    if (!o) return null;
+    this.unsubscribed.add(o.email);
+    for (const x of this.outbox)
+      if (x.email === o.email && x.status === 'pending') x.status = 'skipped';
+    return o.email;
   }
 
   async upcomingAnnouncements(todayIso: string, limit: number): Promise<AnnouncementRecord[]> {
@@ -237,11 +316,32 @@ export class MemoryDb implements Db {
       .map((a) => ({ ...a }));
   }
 
-  async updatesAudience(): Promise<{ name: string; email: string }[]> {
-    const seen = new Map<string, string>();
-    for (const r of this.reservations)
-      if (r.updates && !this.unsubscribed.has(r.email)) seen.set(r.email, r.name);
-    return [...seen].map(([email, name]) => ({ name, email }));
+  async updatesAudience(scope: AudienceScope = 'all'): Promise<AudienceMember[]> {
+    const seen = new Map<string, AudienceMember>();
+    if (scope !== 'imported')
+      for (const r of this.reservations)
+        if (r.updates) seen.set(r.email, { name: r.name, email: r.email, source: 'Booked a seat' });
+    if (scope !== 'booked')
+      for (const c of this.contacts) if (!seen.has(c.email)) seen.set(c.email, { ...c });
+    return [...seen.values()].filter((p) => !this.unsubscribed.has(p.email));
+  }
+
+  async importContacts(
+    people: { name: string; email: string }[],
+    label: string,
+  ): Promise<{ added: number; existing: number; unsubscribed: number }> {
+    const onList = new Set((await this.updatesAudience()).map((p) => p.email));
+    const result = { added: 0, existing: 0, unsubscribed: 0 };
+    for (const p of people) {
+      if (this.unsubscribed.has(p.email)) result.unsubscribed++;
+      else if (onList.has(p.email)) result.existing++;
+      else {
+        this.contacts.push({ name: p.name, email: p.email, source: label });
+        onList.add(p.email);
+        result.added++;
+      }
+    }
+    return result;
   }
 
   async ping(): Promise<void> {}

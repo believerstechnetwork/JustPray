@@ -11,14 +11,17 @@ import {
   sessionCookie,
   sessionIsValid,
 } from './auth';
-import { cancelledEmail, reservationEmail } from './emails';
+import { announcementEmail, cancelledEmail, reservationEmail } from './emails';
+import { processOutbox } from './outbox';
 import {
   CONTRIBUTION_STATUSES,
   type BankDetails,
   type Banks,
   type ContributionRecord,
+  AUDIENCE_SCOPES,
   type AnnouncementFields,
   type AnnouncementRecord,
+  type AudienceScope,
   type ContributionStatus,
   type Db,
   type EventDetails,
@@ -42,10 +45,21 @@ export interface ApiDeps {
   log?: (message: string, error?: unknown) => void;
   /** Delay after a wrong organiser password, to slow down guessing. */
   failedLoginDelayMs?: number;
+  /** Where "Send a test to me" goes by default (the organisers' inbox). */
+  testEmail?: string;
+  /** Most announcement emails to send in 24 hours, to stay within the mail service's limit. */
+  dailyLimit?: number;
 }
 
 const MAX_BODY = 10_000;
+/** Imports can be larger: about 5,000 people. */
+const MAX_IMPORT_BODY = 600_000;
+const MAX_IMPORT = 5000;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const PRODUCTION_URL = 'https://justprayy.netlify.app';
+/** Announcement emails per 24 hours. Gmail allows about 500 a day in all; this leaves room for
+ *  seat confirmations. Set ANNOUNCE_DAILY_LIMIT to change it (e.g. after moving to Resend). */
+export const DAILY_LIMIT = 350;
 /** How long a gathering stays open for cancelling after it starts. */
 const CANCEL_GRACE_MS = 60 * 60 * 1000;
 const REF_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -73,6 +87,20 @@ async function readJson(req: Request): Promise<unknown> {
     throw new HttpError(415, 'Send JSON.');
   const raw = await req.text();
   if (raw.length > MAX_BODY) throw new HttpError(413, 'Request is too large.');
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    throw new HttpError(400, 'Request is not valid JSON.');
+  }
+}
+
+/** Like readJson, with room for an imported list. */
+async function readImport(req: Request): Promise<unknown> {
+  if (!(req.headers.get('content-type') ?? '').includes('application/json'))
+    throw new HttpError(415, 'Send JSON.');
+  const raw = await req.text();
+  if (raw.length > MAX_IMPORT_BODY)
+    throw new HttpError(413, 'The list is too large to import at once.');
   try {
     return JSON.parse(raw) as unknown;
   } catch {
@@ -226,6 +254,17 @@ export function validAnnouncement(body: unknown): AnnouncementFields {
     if ((f[k] ?? '').length > max) throw new HttpError(400, `The ${k} is too long.`);
   return f;
 }
+
+/** The stored fields in the shape the email template takes. */
+export const toContent = (f: AnnouncementFields) => ({
+  ...f,
+  endDate: f.endDate ?? undefined,
+  time: f.time ?? undefined,
+  theme: f.theme ?? undefined,
+  imageUrl: f.imageUrl ?? undefined,
+  linkUrl: f.linkUrl ?? undefined,
+  linkLabel: f.linkLabel ?? undefined,
+});
 
 /** What the public site shows of an announcement. */
 const publicAnnouncement = (a: AnnouncementRecord) => ({
@@ -585,11 +624,94 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
 
     if (path === '/api/admin/announcements' && method === 'GET') {
       requireAdmin();
-      const [announcements, audience] = await Promise.all([
+      const [announcements, all, booked, imported] = await Promise.all([
         db().listAnnouncements(),
-        db().updatesAudience(),
+        db().updatesAudience('all'),
+        db().updatesAudience('booked'),
+        db().updatesAudience('imported'),
       ]);
-      return json(200, { announcements, audience: audience.length });
+      return json(200, {
+        announcements,
+        audience: all.length,
+        counts: { all: all.length, booked: booked.length, imported: imported.length },
+        testTo: deps.testEmail ?? '',
+        dailyLimit: deps.dailyLimit ?? DAILY_LIMIT,
+        email: deps.mailer ? deps.mailer.kind : null,
+      });
+    }
+
+    if (path === '/api/admin/audience' && method === 'GET') {
+      requireAdmin();
+      return json(200, { people: await db().updatesAudience('all') });
+    }
+
+    if (path === '/api/admin/contacts/import' && method === 'POST') {
+      requireAdmin();
+      const raw = await readImport(req);
+      const label =
+        String(field(raw, 'label') ?? '')
+          .trim()
+          .slice(0, 80) || 'Imported';
+      const list = field(raw, 'people');
+      if (!Array.isArray(list) || list.length === 0) return fail(400, 'No people to import.');
+      if (list.length > MAX_IMPORT)
+        return fail(400, `Import up to ${MAX_IMPORT.toLocaleString('en-GB')} people at a time.`);
+      const seen = new Set<string>();
+      const people: { name: string; email: string }[] = [];
+      let invalid = 0;
+      for (const p of list) {
+        const email = String(field(p, 'email') ?? '')
+          .trim()
+          .toLowerCase();
+        const name = String(field(p, 'name') ?? '')
+          .trim()
+          .slice(0, 120);
+        if (!EMAIL_RE.test(email) || email.length > 254) invalid++;
+        else if (!seen.has(email)) {
+          seen.add(email);
+          people.push({ name, email });
+        }
+      }
+      if (!people.length) return fail(400, 'None of the rows has a valid email address.');
+      const result = await db().importContacts(people, label);
+      return json(200, { ...result, invalid });
+    }
+
+    if (path === '/api/admin/announcements/test' && method === 'POST') {
+      requireAdmin();
+      const body = await readJson(req);
+      const fields = validAnnouncement(body);
+      const to = String(field(body, 'to') ?? '').trim();
+      if (!EMAIL_RE.test(to)) return fail(400, 'Enter an email address for the test.');
+      if (!deps.mailer) return fail(503, 'Email is not set up yet, so no test can be sent.');
+      const email = announcementEmail({
+        announcement: toContent(fields),
+        name: 'Organiser',
+        email: to,
+        siteUrl,
+        unsubscribeUrl: `${siteUrl}/#/unsubscribe/test`,
+      });
+      try {
+        await deps.mailer.send({ ...email, subject: `[Test] ${email.subject}` });
+      } catch (e) {
+        log('Test announcement failed', e);
+        return fail(
+          502,
+          'The test email could not be sent. Check the email settings and try again.',
+        );
+      }
+      return json(200, { ok: true });
+    }
+
+    if (path === '/api/unsubscribe' && method === 'POST') {
+      // From the unsubscribe page (JSON) or a mail app's one-click button (?t=…, form body).
+      let token = url.searchParams.get('t') ?? '';
+      if (!token && (req.headers.get('content-type') ?? '').includes('application/json'))
+        token = String(field(await readJson(req), 'token') ?? '');
+      if (!TOKEN_RE.test(token)) return fail(404, 'This unsubscribe link isn’t working.');
+      const email = await db().unsubscribe(token);
+      if (!email) return fail(404, 'This unsubscribe link isn’t working.');
+      return json(200, { ok: true });
     }
 
     if (path === '/api/admin/announcements' && method === 'POST') {
@@ -613,10 +735,26 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
         return json(200, { ok: true });
       }
       if (annMatch[2] && method === 'POST') {
-        const audience = await db().updatesAudience();
-        const published = await db().publishAnnouncement(id, audience.length);
+        const scope = field(await readJson(req), 'audience');
+        if (!AUDIENCE_SCOPES.includes(scope as AudienceScope))
+          return fail(400, 'Choose who to send it to.');
+        const published = await db().publishAnnouncement(id, scope as AudienceScope);
         if (!published) return fail(400, 'This announcement is already published.');
-        // Sending is queued and paced by the outbox (next step of this work).
+        // The emails are queued. Send a first batch now; the scheduled sender does the rest,
+        // within the daily limit.
+        if (deps.mailer) {
+          const mailer = deps.mailer;
+          deps.defer(
+            processOutbox({
+              db: db(),
+              mailer,
+              siteUrl,
+              limit: 10,
+              dailyLimit: deps.dailyLimit ?? DAILY_LIMIT,
+              log,
+            }).catch((e: unknown) => log('First announcement batch failed', e)),
+          );
+        }
         return json(200, { announcement: published });
       }
     }
