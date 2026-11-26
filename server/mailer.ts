@@ -95,12 +95,20 @@ export class ResendMailer implements Mailer {
   }
 
   /** Safe to send again only when Resend answered and refused the email (a 4xx such as 429
-   *  "slow down"). A timeout, a dropped connection or a 5xx may come after Resend took it, and
+   *  "slow down", but not 408 or 409). A timeout, a dropped connection or a 5xx may come after Resend took it, and
    *  the idempotency key only lasts 24 hours while a queued retry can wait longer behind the
    *  daily limit, so those are not retried. */
   canRetry(error: unknown): boolean {
     const status = (error as { status?: unknown } | null)?.status;
-    return typeof status === 'number' && status >= 400 && status < 500;
+    // 408 (timed out) and 409 (another send with this key is still in progress) leave the
+    // outcome open, so they are not retried either.
+    return (
+      typeof status === 'number' &&
+      status >= 400 &&
+      status < 500 &&
+      status !== 408 &&
+      status !== 409
+    );
   }
 }
 

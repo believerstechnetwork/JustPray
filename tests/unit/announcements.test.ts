@@ -442,6 +442,13 @@ describe('review fixes', () => {
     expect(resend.canRetry(await failWith(async () => new Response('', { status: 429 })))).toBe(
       true,
     );
+    // 408 and 409 (a send with the same key still in progress) leave the outcome open.
+    expect(resend.canRetry(await failWith(async () => new Response('', { status: 408 })))).toBe(
+      false,
+    );
+    expect(resend.canRetry(await failWith(async () => new Response('', { status: 409 })))).toBe(
+      false,
+    );
     // A 5xx or a timeout may come after Resend took the email; a retry could land after the
     // idempotency key's 24 hours, so neither is retried.
     expect(resend.canRetry(await failWith(async () => new Response('', { status: 502 })))).toBe(
