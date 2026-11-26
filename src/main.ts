@@ -215,9 +215,12 @@ async function preferences(action?: 'unsubscribe' | 'resubscribe'): Promise<void
     if (u.load === 'ready') u.error = errorMessage(e);
     else Object.assign(u, { load: 'error', error: errorMessage(e) });
   } finally {
-    // Released even when the answer arrives for a link the page has since left.
-    if (ownsBusy) S.busy = false;
-    if (S.page === 'unsubscribe') render();
+    // Released even when the answer arrives for a link the page has since left; whatever page
+    // is showing then is redrawn, so controls it drew disabled come back.
+    if (ownsBusy) {
+      S.busy = false;
+      render();
+    } else if (S.page === 'unsubscribe') render();
   }
 }
 
