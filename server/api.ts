@@ -1,4 +1,6 @@
-import { randomInt } from 'node:crypto';
+import { createHash, randomBytes, randomInt } from 'node:crypto';
+import { icsFile } from '../src/lib/calendar';
+import { parseTime, startsAt } from '../src/lib/format';
 import { fieldsOf, validateContribution, validateRegistration } from '../src/lib/validation';
 import {
   clearedCookie,
@@ -9,7 +11,7 @@ import {
   sessionCookie,
   sessionIsValid,
 } from './auth';
-import { reservationEmail } from './emails';
+import { cancelledEmail, reservationEmail } from './emails';
 import {
   CONTRIBUTION_STATUSES,
   type BankDetails,
@@ -32,7 +34,8 @@ export interface ApiDeps {
   banks: Banks;
   /** Run work after the response is sent (Netlify's `context.waitUntil`). */
   defer: (work: Promise<unknown>) => void;
-  /** Used in emails when the request has no usable origin. */
+  /** The public address used in email links. Defaults to the production site, except when the
+   *  request comes from this computer (local development), where links point back to it. */
   siteUrl?: string;
   log?: (message: string, error?: unknown) => void;
   /** Delay after a wrong organiser password, to slow down guessing. */
@@ -40,6 +43,9 @@ export interface ApiDeps {
 }
 
 const MAX_BODY = 10_000;
+export const PRODUCTION_URL = 'https://justprayy.netlify.app';
+/** How long a gathering stays open for cancelling after it starts. */
+const CANCEL_GRACE_MS = 60 * 60 * 1000;
 const REF_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const SERVER_ERROR = 'Something went wrong on our side. Please try again in a moment.';
 
@@ -80,6 +86,12 @@ const isBot = (body: unknown): boolean => {
   const v = field(body, 'website');
   return typeof v === 'string' && v.trim() !== '';
 };
+
+/** A private token for the "Cancel my seat" link, and the hash that is stored instead of it. */
+export const newCancelToken = (): string => randomBytes(24).toString('base64url');
+export const hashToken = (token: string): string =>
+  createHash('sha256').update(token).digest('hex');
+const TOKEN_RE = /^[A-Za-z0-9_-]{20,64}$/;
 
 export const newReference = (): string =>
   'JP-' + Array.from({ length: 5 }, () => REF_CHARS[randomInt(REF_CHARS.length)]).join('');
@@ -134,12 +146,12 @@ function validEvent(body: unknown, reserved: number): EventDetails {
   const event = {
     title: str('title'),
     date: str('date'),
-    time: str('time'),
+    time: parseTime(str('time')) ?? '',
     venue: str('venue'),
     capacity: Number(field(body, 'capacity')),
   };
-  if (!event.title || !event.time || !event.venue)
-    throw new HttpError(400, 'Fill in the title, time and venue.');
+  if (!event.title || !event.venue) throw new HttpError(400, 'Fill in the title and venue.');
+  if (!event.time) throw new HttpError(400, 'Choose a start time.');
   if (event.title.length > 200 || event.time.length > 100 || event.venue.length > 300)
     throw new HttpError(400, 'One of the fields is too long.');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(event.date) || Number.isNaN(Date.parse(event.date)))
@@ -160,7 +172,11 @@ const publicReservation = (r: ReservationRecord) => ({
   updates: r.updates,
   emailSent: r.emailSentAt !== null,
   createdAt: r.createdAt,
+  status: r.status,
+  cancelledAt: r.cancelledAt,
 });
+
+const isLocal = (url: URL): boolean => /^(localhost|127\.0\.0\.1|\[::1\])$/.test(url.hostname);
 
 /** Handle one `/api/*` request. Framework-free so it runs on Netlify, in Vite and in tests. */
 export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> {
@@ -169,8 +185,12 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
   const method = req.method.toUpperCase();
   const secure = url.protocol === 'https:';
   const log = deps.log ?? ((m: string, e?: unknown) => console.error(m, e ?? ''));
-  const siteUrl =
-    deps.siteUrl || (url.origin.startsWith('http') ? url.origin : 'https://justprayy.netlify.app');
+  // Deploy previews share the production database, so their emails link to the real site.
+  const siteUrl = (deps.siteUrl || (isLocal(url) ? url.origin : PRODUCTION_URL)).replace(
+    /\/+$/,
+    '',
+  );
+  const cancelUrl = (token: string): string => `${siteUrl}/#/cancel/${token}`;
 
   const db = (): Db => {
     if (!deps.db) throw new HttpError(503, 'The site is not connected to its database yet.');
@@ -185,27 +205,78 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
     if (!isAdmin()) throw new HttpError(401, 'Please sign in.');
   };
 
-  const sendConfirmation = (
-    id: number,
-    name: string,
-    email: string,
-    code: string,
-    event: EventDetails,
-  ) => {
+  const sendLater = (label: string, work: (mailer: Mailer) => Promise<void>): boolean => {
     if (!deps.mailer) return false;
     const mailer = deps.mailer;
     deps.defer(
       (async () => {
         try {
-          await mailer.send(reservationEmail({ name, email, code, event, siteUrl }));
-          await db().markEmailSent(id);
+          await work(mailer);
         } catch (e) {
-          log(`Confirmation email for ${code} failed (${mailer.kind})`, e);
+          log(`${label} failed (${mailer.kind})`, e);
         }
       })(),
     );
     return true;
   };
+
+  const sendConfirmation = (
+    held: { id: number; seat: number; code: string },
+    name: string,
+    email: string,
+    event: EventDetails,
+    eventId: number | null,
+    cancelToken: string,
+  ): boolean =>
+    sendLater(`Confirmation email for ${held.code}`, async (mailer) => {
+      const { seat, code } = held;
+      const link = cancelUrl(cancelToken);
+      const hash = hashToken(cancelToken);
+      try {
+        await mailer.send(
+          reservationEmail({ name, email, seat, code, event, eventId, siteUrl, cancelUrl: link }),
+        );
+      } catch (e) {
+        // Only a failure that is recorded lets a later booking attempt re-send the email.
+        await db()
+          .markEmailFailed(held.id, hash)
+          .catch(() => undefined);
+        throw e;
+      }
+      // Tied to this email's token: if the seat was cancelled and booked again meanwhile, the
+      // newer booking's own email decides whether it was delivered.
+      await db().markEmailSent(held.id, hash);
+    });
+
+  /** Find the reservation behind a cancel link, and whether it can still be cancelled. */
+  const lookUpCancel = async (body: unknown) => {
+    const token = field(body, 'token');
+    if (typeof token !== 'string' || !TOKEN_RE.test(token)) return null;
+    const hash = hashToken(token);
+    const found = await db().findByCancelHash(hash);
+    if (!found) return null;
+    const start = startsAt(found.event.date, found.event.time);
+    const endOfDay = new Date(`${found.event.date}T23:59:59+01:00`).getTime();
+    const closesAt = start ? start.getTime() + CANCEL_GRACE_MS : endOfDay;
+    const ended = !found.current || Date.now() > closesAt;
+    return { ...found, hash, ended };
+  };
+
+  const cancelView = (found: NonNullable<Awaited<ReturnType<typeof lookUpCancel>>>) => ({
+    status:
+      found.reservation.status === 'cancelled' ? 'cancelled' : found.ended ? 'ended' : 'active',
+    seat: found.reservation.seat,
+    code: found.reservation.code,
+    name: found.reservation.name,
+    event: {
+      title: found.event.title,
+      date: found.event.date,
+      time: found.event.time,
+      venue: found.event.venue,
+    },
+  });
+
+  const BAD_LINK = 'This cancel link isn’t working. It may be from an older email.';
 
   try {
     // Public ------------------------------------------------------------------
@@ -220,18 +291,30 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
       const result = validateRegistration(fieldsOf(body));
       if (!result.ok) return json(400, { error: 'Please check the form.', fields: result.errors });
       const { name, email, phone, updates } = result.value;
-      const event = await db().currentEvent();
+      const [event, eventId] = await Promise.all([db().currentEvent(), db().currentEventId()]);
       if (!event) return fail(503, 'Reservations are not open yet. Please check back soon.');
-      const outcome = await db().reserve({ name, email, phone, updates });
+      const cancelToken = newCancelToken();
+      const outcome = await db().reserve({
+        name,
+        email,
+        phone,
+        updates,
+        cancelHash: hashToken(cancelToken),
+      });
       if (outcome.status === 'no_event')
         return fail(503, 'Reservations are not open yet. Please check back soon.');
       if (outcome.status === 'full')
         return json(409, { status: 'full', reserved: outcome.reserved, capacity: event.capacity });
       if (outcome.status === 'existing') {
-        // Never echo someone else's details back. Re-send only if the first email failed.
-        const emailQueued =
-          outcome.emailSentAt === null &&
-          sendConfirmation(outcome.id, name, email, outcome.code, event);
+        // Never echo someone else's details back. Re-send only a confirmation that is known to
+        // have failed (not one still on its way), with a fresh cancel link: the earlier link never
+        // reached the inbox. The claim is atomic, so two attempts at once send one email.
+        let emailQueued = false;
+        if (outcome.emailSentAt === null && deps.mailer) {
+          const fresh = newCancelToken();
+          if (await db().claimEmailRetry(outcome.id, hashToken(fresh)))
+            emailQueued = sendConfirmation(outcome, name, email, event, eventId, fresh);
+        }
         return json(200, {
           status: 'existing',
           reserved: outcome.reserved,
@@ -239,14 +322,78 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
           emailQueued,
         });
       }
-      const emailQueued = sendConfirmation(outcome.id, name, email, outcome.code, event);
+      const emailQueued = sendConfirmation(outcome, name, email, event, eventId, cancelToken);
+      // With email off, record the confirmation as not sent, so that once email is set up a
+      // repeat booking attempt sends it (with a fresh cancel link), as for a failed send.
+      // The seat is taken either way: a failure here must not lose the visitor their pass.
+      if (!emailQueued)
+        await db()
+          .markEmailFailed(outcome.id, hashToken(cancelToken))
+          .catch((e: unknown) => log(`Could not mark ${outcome.code} as not emailed`, e));
       return json(201, {
         status: 'created',
-        reservation: { seat: outcome.seat, code: outcome.code, name, email, phone },
+        reservation: { seat: outcome.seat, code: outcome.code, name, email, phone, cancelToken },
         reserved: outcome.reserved,
         capacity: event.capacity,
         emailQueued,
       });
+    }
+
+    if (path === '/api/event.ics' && method === 'GET') {
+      // Emails name their gathering by its record id, so an older email keeps giving its own
+      // gathering, with its latest details (a new date if it was moved), whatever is current.
+      const id = url.searchParams.get('event') ?? '';
+      const event = /^\d{1,12}$/.test(id)
+        ? await db().eventById(Number(id))
+        : await db().currentEvent();
+      if (!event) return fail(404, 'That gathering is not listed any more.');
+      return new Response(icsFile(event, siteUrl), {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/calendar; charset=utf-8',
+          'Content-Disposition': 'attachment; filename="just-pray.ics"',
+          'Cache-Control': 'no-store',
+        },
+      });
+    }
+
+    if (path === '/api/cancel/lookup' && method === 'POST') {
+      const found = await lookUpCancel(await readJson(req));
+      if (!found) return fail(404, BAD_LINK);
+      return json(200, cancelView(found));
+    }
+
+    if (path === '/api/cancel' && method === 'POST') {
+      const body = await readJson(req);
+      const found = await lookUpCancel(body);
+      if (!found) return fail(404, BAD_LINK);
+      const r = found.reservation;
+      if (
+        r.status === 'active' &&
+        !found.ended &&
+        (await db().cancelReservation(r.id, found.hash))
+      ) {
+        sendLater(`Cancellation email for ${r.code}`, (mailer) =>
+          mailer.send(
+            cancelledEmail({
+              name: r.name,
+              email: r.email,
+              seat: r.seat,
+              code: r.code,
+              event: found.event,
+              siteUrl,
+            }),
+          ),
+        );
+        const view = cancelView({ ...found, reservation: { ...r, status: 'cancelled' } });
+        return json(200, { ...view, reserved: await db().reservedCount() });
+      }
+      // Nothing changed: read the booking again rather than trust the earlier lookup. Already
+      // cancelled (perhaps a moment ago, in another tab) or too late: say how things stand. The
+      // link replaced meanwhile (cancelled and booked again): this link no longer works.
+      const latest = await lookUpCancel(body);
+      if (!latest) return fail(404, BAD_LINK);
+      return json(200, cancelView(latest));
     }
 
     if (path === '/api/contributions' && method === 'POST') {
@@ -321,13 +468,15 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
         db().listReservations(),
         db().listContributions(),
       ]);
+      // Seats still held. The chart counts them too, so it agrees with the seat total.
+      const held = reservations.filter((r) => r.status === 'active');
       return json(200, {
         event,
-        reserved: reservations.length,
+        reserved: held.length,
         reservations: reservations.map(publicReservation),
         contributions,
         totals: contributionTotals(contributions),
-        byDay: reservationsByDay(reservations, new Date()),
+        byDay: reservationsByDay(held, new Date()),
         email: deps.mailer ? deps.mailer.kind : null,
         banks: deps.banks,
       });
@@ -371,6 +520,7 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
         'Wants updates',
         'Email sent',
         'Reserved at',
+        'Status',
       ];
       const rows = list.map((r) =>
         [
@@ -382,6 +532,7 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
           r.updates ? 'yes' : 'no',
           r.emailSentAt ? 'yes' : 'no',
           r.createdAt,
+          r.status === 'cancelled' ? 'cancelled' : 'reserved',
         ]
           .map(csvCell)
           .join(','),

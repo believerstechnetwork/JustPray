@@ -6,18 +6,27 @@ import { handleShareClick, initShareKeys } from './share';
 import type { Currency } from './data/types';
 import { PRESETS, ROUTES, S, type AdminTab, type Route, type Theme } from './state';
 import { admin } from './views/admin';
+import { cancel } from './views/cancel';
 import { confirmed } from './views/confirmed';
 import { home } from './views/home';
 import { register } from './views/register';
 import { support } from './views/support';
 
-const views: Record<Route, () => string> = { home, register, confirmed, support, admin };
+const views: Record<Route, () => string> = {
+  home,
+  register,
+  confirmed,
+  support,
+  admin,
+  cancel,
+};
 const TITLES: Record<Route, string> = {
   home: 'Just Pray: a free monthly prayer gathering for people in tech',
   register: 'Reserve a seat · Just Pray',
   confirmed: 'Seat reserved · Just Pray',
   support: 'Support the gathering · Just Pray',
   admin: 'Organiser · Just Pray',
+  cancel: 'Cancel your seat · Just Pray',
 };
 const THEME_KEY = 'jp:theme';
 
@@ -30,8 +39,11 @@ let eventVersion = 0;
 /** Bumped on sign-out, so an organiser read that started before it cannot bring the data back. */
 let adminGeneration = 0;
 
+/** "#/cancel/abc" -> ['cancel', 'abc'] */
+const hashParts = (): string[] => location.hash.replace(/^#\/?/, '').split('/');
+
 const routeFromHash = (): Route => {
-  const r = location.hash.replace(/^#\/?/, '') as Route;
+  const r = hashParts()[0] as Route;
   return ROUTES.includes(r) ? r : 'home';
 };
 
@@ -130,8 +142,56 @@ async function loadAdmin(): Promise<void> {
   if (S.page === 'admin') render();
 }
 
+/** Look up the seat behind a cancel link. Ignores the answer if another link was opened meanwhile. */
+async function loadCancel(token: string): Promise<void> {
+  S.cancel = { token, load: 'loading', info: null, error: '', justCancelled: false };
+  try {
+    const info = await api.cancelLookup(token);
+    if (S.cancel.token !== token) return;
+    S.cancel.info = info;
+    S.cancel.load = 'ready';
+  } catch (e) {
+    if (S.cancel.token !== token) return;
+    S.cancel.error = errorMessage(e);
+    S.cancel.load = 'error';
+  }
+  if (S.page === 'cancel') render();
+}
+
+async function cancelSeat(): Promise<void> {
+  const token = S.cancel.token;
+  if (S.busy || !token) return;
+  S.busy = true;
+  S.cancel.error = '';
+  render();
+  try {
+    const info = await api.cancel(token);
+    if (S.cancel.token === token) {
+      S.cancel.info = info;
+      S.cancel.justCancelled = info.status === 'cancelled' && info.reserved !== undefined;
+    }
+    if (info.reserved !== undefined) {
+      const left = info.reserved;
+      seatCount.applyLatest(() => (S.reserved = left));
+    }
+    // A seat booked earlier in this visit no longer has a pass to show.
+    if (info.status === 'cancelled' && S.attendee?.cancelToken === token) S.attendee = null;
+  } catch (e) {
+    S.cancel.error = errorMessage(e);
+  }
+  S.busy = false;
+  render();
+}
+
 function applyRoute(): void {
   const route = routeFromHash();
+  if (route === 'cancel') {
+    const token = hashParts()[1] ?? '';
+    if (!token)
+      // "#/cancel" with nothing after it: there is nothing to look up.
+      S.cancel = { token: '', load: 'error', info: null, error: '', justCancelled: false };
+    else if (token !== S.cancel.token || S.cancel.load === 'error') void loadCancel(token);
+  }
   // The confirmation page only makes sense after a reservation.
   S.page = route === 'confirmed' && !S.attendee ? 'register' : route;
   S.menu = false;
@@ -276,6 +336,8 @@ document.addEventListener('click', async (e) => {
       return render();
     case 'admin-reload':
       return loadAdmin();
+    case 'cancel-seat':
+      return cancelSeat();
   }
 });
 

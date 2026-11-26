@@ -2,13 +2,21 @@ import type {
   AdminData,
   BankDetails,
   Banks,
+  CancelInfo,
   Currency,
   GatheringEvent,
   Reservation,
 } from './data/types';
 
-export type Route = 'home' | 'register' | 'confirmed' | 'support' | 'admin';
-export const ROUTES: readonly Route[] = ['home', 'register', 'confirmed', 'support', 'admin'];
+export type Route = 'home' | 'register' | 'confirmed' | 'support' | 'admin' | 'cancel';
+export const ROUTES: readonly Route[] = [
+  'home',
+  'register',
+  'confirmed',
+  'support',
+  'admin',
+  'cancel',
+];
 export type AdminTab = 'overview' | 'attendees' | 'contributions' | 'events';
 /** Support flow: choose an amount, see the bank details, then the thank-you note. */
 export type SupportStep = 'choose' | 'details' | 'sent';
@@ -27,9 +35,9 @@ export interface UiState {
   bank: BankDetails | null;
   /** A request (form submit) is in flight. */
   busy: boolean;
-  /** Reservation made during this visit. */
   /** Name and email typed on the home page, carried to the Reserve form. */
   draft: { name: string; email: string } | null;
+  /** Reservation made during this visit. */
   attendee: Reservation | null;
   attendeeEmailed: boolean;
   registerErrors: Partial<Record<string, string>>;
@@ -47,6 +55,15 @@ export interface UiState {
   admin: AdminData | null;
   adminError: string;
   adminNotice: string;
+  /** The "Cancel my seat" page, opened from the private link in an email. */
+  cancel: {
+    token: string;
+    load: 'loading' | 'ready' | 'error';
+    info: CancelInfo | null;
+    error: string;
+    /** Cancelled during this visit, so the page can thank them. */
+    justCancelled: boolean;
+  };
 }
 
 export const S: UiState = {
@@ -76,6 +93,7 @@ export const S: UiState = {
   admin: null,
   adminError: '',
   adminNotice: '',
+  cancel: { token: '', load: 'loading', info: null, error: '', justCancelled: false },
 };
 
 /** Preset contribution amounts per currency; the middle one is the default. */

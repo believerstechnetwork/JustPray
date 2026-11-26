@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type {
+  CancelLookup,
   ContributionRecord,
   ContributionStatus,
   Db,
@@ -45,7 +46,13 @@ const toReservation = (r: Row): ReservationRecord => ({
   updates: r.updates === true,
   emailSentAt: opt(r.email_sent_at),
   createdAt: s(r.created_at),
+  status: r.status === 'cancelled' ? 'cancelled' : 'active',
+  cancelledAt: opt(r.cancelled_at),
 });
+
+/** Columns read for reservations: everything except the cancel hash. */
+const RESERVATION_COLUMNS =
+  'id,event_id,seat,code,name,email,phone,updates,email_sent_at,created_at,status,cancelled_at';
 
 const toContribution = (r: Row): ContributionRecord => ({
   id: n(r.id),
@@ -89,6 +96,16 @@ export class SupabaseDb implements Db {
     return row ? toEvent(row) : null;
   }
 
+  async currentEventId(): Promise<number | null> {
+    const row = await this.currentEventRow();
+    return row ? n(row.id) : null;
+  }
+
+  async eventById(id: number): Promise<EventDetails | null> {
+    const rows = check(await this.sb.from('events').select('*').eq('id', id).limit(1)) as Row[];
+    return rows[0] ? toEvent(rows[0]) : null;
+  }
+
   async updateEvent(event: EventDetails): Promise<UpdateEventOutcome> {
     const rows = check(
       await this.sb.rpc('update_current_event', {
@@ -129,7 +146,8 @@ export class SupabaseDb implements Db {
     const res = await this.sb
       .from('reservations')
       .select('id', { count: 'exact', head: true })
-      .eq('event_id', n(row.id));
+      .eq('event_id', n(row.id))
+      .eq('status', 'active');
     if (res.error) throw new Error(`Database error: ${res.error.message}`);
     return res.count ?? 0;
   }
@@ -141,6 +159,7 @@ export class SupabaseDb implements Db {
         p_email: input.email,
         p_phone: input.phone,
         p_updates: input.updates,
+        p_cancel_hash: input.cancelHash,
       }),
     ) as Row[];
     const r = rows[0];
@@ -162,13 +181,72 @@ export class SupabaseDb implements Db {
     throw new Error(`Database error: unexpected reserve status ${status}`);
   }
 
-  async markEmailSent(reservationId: number): Promise<void> {
+  async markEmailSent(reservationId: number, cancelHash: string): Promise<void> {
     check(
       await this.sb
         .from('reservations')
         .update({ email_sent_at: new Date().toISOString() })
-        .eq('id', reservationId),
+        .eq('id', reservationId)
+        .eq('cancel_hash', cancelHash),
     );
+  }
+
+  async markEmailFailed(reservationId: number, cancelHash: string): Promise<void> {
+    check(
+      await this.sb
+        .from('reservations')
+        .update({ email_failed_at: new Date().toISOString() })
+        .eq('id', reservationId)
+        .eq('cancel_hash', cancelHash)
+        .is('email_sent_at', null),
+    );
+  }
+
+  async claimEmailRetry(reservationId: number, cancelHash: string): Promise<boolean> {
+    // One conditional update, so two requests at once cannot both claim the re-send. A booking
+    // with no hash at all predates cancel links; its earlier email counts as failed if unsent.
+    const rows = check(
+      await this.sb
+        .from('reservations')
+        .update({ cancel_hash: cancelHash, email_failed_at: null })
+        .eq('id', reservationId)
+        .eq('status', 'active')
+        .is('email_sent_at', null)
+        .or('email_failed_at.not.is.null,cancel_hash.is.null')
+        .select('id'),
+    ) as Row[];
+    return rows.length > 0;
+  }
+
+  async findByCancelHash(cancelHash: string): Promise<CancelLookup | null> {
+    const rows = check(
+      await this.sb
+        .from('reservations')
+        .select(RESERVATION_COLUMNS)
+        .eq('cancel_hash', cancelHash)
+        .limit(1),
+    ) as unknown as Row[];
+    const r = rows[0];
+    if (!r) return null;
+    const events = check(
+      await this.sb.from('events').select('*').eq('id', n(r.event_id)).limit(1),
+    ) as Row[];
+    const ev = events[0];
+    if (!ev) return null;
+    return { reservation: toReservation(r), event: toEvent(ev), current: ev.is_current === true };
+  }
+
+  async cancelReservation(reservationId: number, cancelHash: string): Promise<boolean> {
+    const rows = check(
+      await this.sb
+        .from('reservations')
+        .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
+        .eq('id', reservationId)
+        .eq('status', 'active')
+        .eq('cancel_hash', cancelHash)
+        .select('id'),
+    ) as Row[];
+    return rows.length > 0;
   }
 
   async listReservations(): Promise<ReservationRecord[]> {
@@ -178,7 +256,7 @@ export class SupabaseDb implements Db {
     const rows = await this.all('seat', (after) =>
       this.sb
         .from('reservations')
-        .select('*')
+        .select(RESERVATION_COLUMNS)
         .eq('event_id', eventId)
         .gt('seat', after)
         .order('seat', { ascending: true })

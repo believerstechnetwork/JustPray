@@ -1,5 +1,12 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import { csvCell, handleApi, reservationsByDay, type ApiDeps } from '../../server/api';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  csvCell,
+  handleApi,
+  hashToken,
+  PRODUCTION_URL,
+  reservationsByDay,
+  type ApiDeps,
+} from '../../server/api';
 import { createSession, sessionIsValid } from '../../server/auth';
 import { MemoryMailer } from '../../server/mailer';
 import { MemoryDb } from '../../server/memory-db';
@@ -7,7 +14,7 @@ import { MemoryDb } from '../../server/memory-db';
 const EVENT = {
   title: 'Just Pray',
   date: '2027-01-30',
-  time: '4:00 PM WAT',
+  time: '16:00',
   venue: 'Lagos',
   capacity: 2,
 };
@@ -126,6 +133,26 @@ describe('public API', () => {
     const { status, data } = await call('POST', '/api/reserve', person('a@b.co'));
     expect(status).toBe(201);
     expect(data.emailQueued).toBe(false);
+  });
+
+  it('still returns the pass if recording "not emailed" fails', async () => {
+    deps.mailer = null;
+    db.markEmailFailed = () => Promise.reject(new Error('db hiccup'));
+    const { status, data } = await call('POST', '/api/reserve', person('a@b.co'));
+    expect(status).toBe(201);
+    expect(data.reservation).toMatchObject({ seat: 1 });
+  });
+
+  it('sends the confirmation of a booking made while email was off, once email is set up', async () => {
+    deps.mailer = null;
+    await call('POST', '/api/reserve', person('a@b.co'));
+    deps.mailer = mailer;
+    const again = await call('POST', '/api/reserve', person('a@b.co'));
+    expect(again.data.emailQueued).toBe(true);
+    await Promise.all(deferred);
+    expect(mailer.sent).toHaveLength(1);
+    expect(mailer.sent[0]?.text).toMatch(/#\/cancel\/[A-Za-z0-9_-]{32}/);
+    expect(db.reservations[0]?.emailSentAt).not.toBeNull();
   });
 
   it('reports a full gathering', async () => {
@@ -355,7 +382,269 @@ describe('organiser API', () => {
     expect(res.headers.get('content-type')).toContain('text/csv');
     const text = await res.text();
     expect(text.split('\r\n')[0]).toContain('"Seat","Code","Name"');
+    expect(text.split('\r\n')[0]).toContain('"Status"');
+    expect(text.split('\r\n')[1]).toContain('"reserved"');
     expect(text).toContain(`"'=HYPERLINK(""x"")"`);
+  });
+});
+
+describe('cancelling a seat', () => {
+  // The gathering is on 30 January 2027 at 16:00 WAT, and cancelling closes an hour after it
+  // starts. Fix the clock ten days before, so these tests do not start failing after that date.
+  // Only Date is faked: timers and promises run as normal.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2027-01-20T12:00:00Z'));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const book = async (email = 'ada@example.com') => {
+    const { data } = await call('POST', '/api/reserve', person(email));
+    await Promise.all(deferred);
+    return (data.reservation as { cancelToken: string; seat: number }).cancelToken;
+  };
+
+  it('gives the booker a private token, stores only its hash, and emails the cancel link', async () => {
+    const token = await book();
+    expect(token).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    expect(JSON.stringify(db.reservations)).not.toContain(token);
+    expect(db.reservations[0]?.cancelHash).toBe(hashToken(token));
+    const sent = mailer.sent[0];
+    expect(sent?.text).toContain(`/#/cancel/${token}`);
+    expect(sent?.html).toContain(`/#/cancel/${token}`);
+  });
+
+  it('links emails to the live site, or back to this computer during local development', async () => {
+    await book();
+    expect(mailer.sent[0]?.text).toContain(`${PRODUCTION_URL}/#/cancel/`);
+    const res = await handleApi(
+      new Request('http://localhost:5173/api/reserve', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(person('local@example.com')),
+      }),
+      deps,
+    );
+    expect(res.status).toBe(201);
+    await Promise.all(deferred);
+    expect(mailer.sent[1]?.text).toContain('http://localhost:5173/#/cancel/');
+  });
+
+  it('shows the seat, cancels it, frees it and sends one cancellation email', async () => {
+    const token = await book();
+    await book('bola@example.com');
+    const look = await call('POST', '/api/cancel/lookup', { token });
+    expect(look.status).toBe(200);
+    expect(look.data).toMatchObject({
+      status: 'active',
+      seat: 1,
+      code: 'JP-0001',
+      name: 'Ada Obi',
+    });
+    expect(look.data).not.toHaveProperty('email');
+    expect((await call('POST', '/api/reserve', person('cy@example.com'))).status).toBe(409);
+
+    const done = await call('POST', '/api/cancel', { token });
+    expect(done.data).toMatchObject({ status: 'cancelled', seat: 1, reserved: 1 });
+    await Promise.all(deferred);
+    expect(mailer.sent.at(-1)?.subject).toContain('cancelled');
+    expect(mailer.sent.at(-1)?.to).toBe('ada@example.com');
+    expect((await call('GET', '/api/public')).data.reserved).toBe(1);
+    // The freed seat can go to someone else.
+    expect((await call('POST', '/api/reserve', person('cy@example.com'))).status).toBe(201);
+
+    // A second press says how things stand, without a second email.
+    const sentBefore = mailer.sent.length;
+    const again = await call('POST', '/api/cancel', { token });
+    expect(again.status).toBe(200);
+    expect(again.data).toMatchObject({ status: 'cancelled' });
+    expect(again.data).not.toHaveProperty('reserved');
+    await Promise.all(deferred);
+    expect(mailer.sent).toHaveLength(sentBefore);
+  });
+
+  it('refuses unknown and malformed tokens', async () => {
+    await book();
+    for (const token of ['x'.repeat(32), 'short', 42, undefined, '../../etc/passwd-aaaaaaaaaaaa']) {
+      expect((await call('POST', '/api/cancel/lookup', { token })).status).toBe(404);
+      expect((await call('POST', '/api/cancel', { token })).status).toBe(404);
+    }
+    expect(db.reservations[0]?.status).toBe('active');
+  });
+
+  it('gives the same seat back when someone who cancelled books again', async () => {
+    const first = await book();
+    await call('POST', '/api/cancel', { token: first });
+    const { status, data } = await call('POST', '/api/reserve', person('ada@example.com'));
+    expect(status).toBe(201);
+    const r = data.reservation as { seat: number; cancelToken: string };
+    expect(r.seat).toBe(1);
+    expect(r.cancelToken).not.toBe(first);
+    expect((await call('POST', '/api/cancel/lookup', { token: first })).status).toBe(404);
+    expect((await call('POST', '/api/cancel/lookup', { token: r.cancelToken })).data).toMatchObject(
+      { status: 'active' },
+    );
+  });
+
+  it('closes cancelling an hour after the gathering starts', async () => {
+    const token = await book();
+    vi.setSystemTime(new Date('2027-01-30T15:59:00Z')); // 16:59 WAT: still open
+    expect((await call('POST', '/api/cancel/lookup', { token })).data).toMatchObject({
+      status: 'active',
+    });
+    vi.setSystemTime(new Date('2027-01-30T16:01:00Z')); // 17:01 WAT: closed
+    expect((await call('POST', '/api/cancel/lookup', { token })).data).toMatchObject({
+      status: 'ended',
+    });
+    expect((await call('POST', '/api/cancel', { token })).data).toMatchObject({ status: 'ended' });
+    expect(db.reservations[0]?.status).toBe('active');
+  });
+
+  it('re-sends a failed confirmation with a fresh link that replaces the old one', async () => {
+    deps.mailer = { kind: 'broken', send: () => Promise.reject(new Error('smtp down')) };
+    const old = await book();
+    deps.mailer = mailer;
+    await call('POST', '/api/reserve', person('ada@example.com'));
+    await Promise.all(deferred);
+    expect(mailer.sent[0]?.text).not.toContain(old);
+    const fresh = /#\/cancel\/([A-Za-z0-9_-]+)/.exec(mailer.sent[0]?.text ?? '')?.[1] ?? '';
+    expect((await call('POST', '/api/cancel/lookup', { token: fresh })).status).toBe(200);
+    expect((await call('POST', '/api/cancel/lookup', { token: old })).status).toBe(404);
+  });
+
+  it('does not replace the link while the first confirmation is still on its way', async () => {
+    let finish: () => void = () => undefined;
+    deps.mailer = {
+      kind: 'slow',
+      send: (e) =>
+        new Promise<void>((resolve) => {
+          finish = () => {
+            mailer.sent.push(e);
+            resolve();
+          };
+        }),
+    };
+    const { data } = await call('POST', '/api/reserve', person('ada@example.com'));
+    const token = (data.reservation as { cancelToken: string }).cancelToken;
+    // A second attempt while the first email is unfinished sends nothing and keeps the link.
+    const again = await call('POST', '/api/reserve', person('ada@example.com'));
+    expect(again.data.emailQueued).toBe(false);
+    finish();
+    await Promise.all(deferred);
+    expect(mailer.sent).toHaveLength(1);
+    expect(mailer.sent[0]?.text).toContain(token);
+    expect((await call('POST', '/api/cancel/lookup', { token })).status).toBe(200);
+    expect(db.reservations[0]?.emailSentAt).not.toBeNull();
+  });
+
+  it('marks only the booking whose email was delivered as emailed', async () => {
+    let finish: () => void = () => undefined;
+    deps.mailer = {
+      kind: 'slow',
+      send: () => new Promise<void>((resolve) => (finish = resolve)),
+    };
+    const { data } = await call('POST', '/api/reserve', person('ada@example.com'));
+    const first = (data.reservation as { cancelToken: string }).cancelToken;
+    // Cancelled and booked again before the first email finished; the new email fails.
+    const firstSend = finish;
+    deps.mailer = mailer;
+    await call('POST', '/api/cancel', { token: first });
+    deps.mailer = { kind: 'broken', send: () => Promise.reject(new Error('smtp down')) };
+    await call('POST', '/api/reserve', person('ada@example.com'));
+    firstSend();
+    await Promise.all(deferred);
+    // The old email arriving late does not count as the new booking's confirmation.
+    expect(db.reservations[0]?.emailSentAt).toBeNull();
+    deps.mailer = mailer;
+    expect((await call('POST', '/api/reserve', person('ada@example.com'))).data.emailQueued).toBe(
+      true,
+    );
+  });
+
+  it('cancels only with the token that is current for the booking', async () => {
+    await book();
+    const r = db.reservations[0];
+    expect(await db.cancelReservation(r?.id ?? 0, 'stale-hash')).toBe(false);
+    expect(db.reservations[0]?.status).toBe('active');
+  });
+
+  it('says the link no longer works when it is replaced between the check and the cancel', async () => {
+    const token = await book();
+    // The booking is cancelled and booked again (new link) just as this request cancels.
+    const real = db.cancelReservation.bind(db);
+    db.cancelReservation = async (id, hash) => {
+      const r = db.reservations.find((x) => x.id === id);
+      if (r) r.cancelHash = 'replaced-by-a-new-booking';
+      return real(id, hash);
+    };
+    const res = await call('POST', '/api/cancel', { token });
+    expect(res.status).toBe(404);
+    expect(db.reservations[0]?.status).toBe('active');
+  });
+
+  it('shows cancelled seats to organisers and counts only held seats', async () => {
+    const token = await book();
+    await book('bola@example.com');
+    await call('POST', '/api/cancel', { token });
+    const { data } = await call('GET', '/api/admin/data', undefined, adminCookie());
+    expect(data.reserved).toBe(1);
+    const list = data.reservations as { status: string; cancelledAt: string | null }[];
+    expect(list.map((r) => r.status)).toEqual(['cancelled', 'active']);
+    expect(list[0]?.cancelledAt).not.toBeNull();
+    expect(JSON.stringify(data)).not.toContain('cancelHash');
+    // The reservations chart agrees with the seat total: cancelled seats are not counted.
+    const byDay = data.byDay as { count: number }[];
+    expect(byDay.reduce((t, d) => t + d.count, 0)).toBe(1);
+  });
+
+  it('lets capacity drop to the seats still held', async () => {
+    const token = await book();
+    await book('bola@example.com');
+    await call('POST', '/api/cancel', { token });
+    const saved = await call('PUT', '/api/admin/event', { ...EVENT, capacity: 1 }, adminCookie());
+    expect(saved.status).toBe(200);
+  });
+});
+
+describe('event time and calendar', () => {
+  it('stores the start time as HH:MM and refuses one it cannot read', async () => {
+    const saved = await call(
+      'PUT',
+      '/api/admin/event',
+      { ...EVENT, time: '4:30 pm' },
+      adminCookie(),
+    );
+    expect(saved.data.event).toMatchObject({ time: '16:30' });
+    const bad = await call('PUT', '/api/admin/event', { ...EVENT, time: 'evening' }, adminCookie());
+    expect(bad.status).toBe(400);
+    expect(bad.data.error).toBe('Choose a start time.');
+  });
+
+  it('serves the calendar file for the gathering named in the email, even after it is edited', async () => {
+    await call('POST', '/api/reserve', person('ada@example.com'));
+    await Promise.all(deferred);
+    const link = /\/api\/event\.ics\?event=(\d+)/.exec(mailer.sent[0]?.text ?? '');
+    expect(link?.[1]).toBe('1');
+    const before = await call('GET', `/api/event.ics?event=${link?.[1]}`);
+    expect(await before.res.text()).toContain('DTSTART:20270130T150000Z');
+    // The gathering is moved: the same link still works and gives the new date.
+    await call('PUT', '/api/admin/event', { ...EVENT, date: '2027-02-27' }, adminCookie());
+    const after = await call('GET', `/api/event.ics?event=${link?.[1]}`);
+    expect(after.status).toBe(200);
+    expect(await after.res.text()).toContain('DTSTART:20270227T150000Z');
+    expect((await call('GET', '/api/event.ics?event=999')).status).toBe(404);
+  });
+
+  it('serves a calendar file for the current gathering', async () => {
+    const { status, res } = await call('GET', '/api/event.ics');
+    expect(status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/calendar');
+    const text = await res.text();
+    expect(text).toContain('DTSTART:20270130T150000Z');
+    expect(text).toContain('DTEND:20270130T170000Z');
+    expect(text).toContain('SUMMARY:Just Pray');
   });
 });
 

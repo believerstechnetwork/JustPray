@@ -18,7 +18,7 @@ export function devApiMiddleware(): Connect.NextHandleFunction {
     db: new MemoryDb({
       title: 'Just Pray · A Gathering of Hearts',
       date: '2027-01-30',
-      time: '4:00 PM WAT',
+      time: '16:00',
       venue: 'Sample venue, Lagos',
       capacity: 120,
     }),

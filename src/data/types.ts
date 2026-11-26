@@ -4,6 +4,7 @@ export interface GatheringEvent {
   title: string;
   /** ISO date, YYYY-MM-DD */
   date: string;
+  /** Start time in Lagos, "HH:MM"; older gatherings may hold free text. See `displayTime`. */
   time: string;
   venue: string;
   capacity: number;
@@ -35,6 +36,19 @@ export interface Reservation {
   name: string;
   email: string;
   phone: string;
+  /** Private token for the "Cancel my seat" link. */
+  cancelToken?: string;
+}
+
+/** What a cancel link shows: the seat, and whether it can still be cancelled. */
+export interface CancelInfo {
+  status: 'active' | 'cancelled' | 'ended';
+  seat: number;
+  code: string;
+  name: string;
+  event: Omit<GatheringEvent, 'capacity'>;
+  /** Seats held after a cancellation, so the seat count can update. */
+  reserved?: number;
 }
 
 export type ReserveResponse =
@@ -70,6 +84,8 @@ export interface AdminReservation {
   updates: boolean;
   emailSent: boolean;
   createdAt: string;
+  status: 'active' | 'cancelled';
+  cancelledAt: string | null;
 }
 
 export interface AdminData {

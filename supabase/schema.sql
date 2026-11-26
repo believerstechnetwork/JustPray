@@ -29,6 +29,12 @@ create table if not exists public.reservations (
   updates boolean not null default false,
   email_sent_at timestamptz,
   created_at timestamptz not null default now(),
+  status text not null default 'active' check (status in ('active', 'cancelled')),
+  cancelled_at timestamptz,
+  -- SHA-256 of the private token in the "Cancel my seat" link. The token itself is never stored.
+  cancel_hash text,
+  -- Set when the confirmation email could not be sent, so a later booking attempt may re-send it.
+  email_failed_at timestamptz,
   unique (event_id, email),
   unique (event_id, seat),
   unique (event_id, code)
@@ -53,6 +59,15 @@ alter table public.contributions
 
 create index if not exists contributions_created_at on public.contributions (created_at desc);
 
+-- For databases created before people could cancel their own seat.
+alter table public.reservations
+  add column if not exists status text not null default 'active' check (status in ('active', 'cancelled'));
+alter table public.reservations add column if not exists cancelled_at timestamptz;
+alter table public.reservations add column if not exists cancel_hash text;
+alter table public.reservations add column if not exists email_failed_at timestamptz;
+create unique index if not exists reservations_cancel_hash
+  on public.reservations (cancel_hash) where cancel_hash is not null;
+
 alter table public.events enable row level security;
 alter table public.reservations enable row level security;
 alter table public.contributions enable row level security;
@@ -61,16 +76,21 @@ revoke all on public.events, public.reservations, public.contributions from anon
 grant all on public.events, public.reservations, public.contributions to service_role;
 
 -- Reserve a seat for the current gathering. Locking the event row makes concurrent
--- reservations wait their turn, so capacity can never be exceeded.
---   status 'created'  : a new seat; seat and code are set
+-- reservations wait their turn, so capacity can never be exceeded. Only active (not
+-- cancelled) reservations count toward capacity.
+--   status 'created'  : a new seat, or a cancelled one brought back; seat and code are set
 --   status 'existing' : this email already has a seat; seat and code are set
 --   status 'full'     : no seats left
 --   status 'no_event' : no current gathering is set up
+-- The earlier version had no p_cancel_hash. It is replaced in one step, and the new parameter
+-- has a default, so a site still running the earlier code keeps working while this runs.
+drop function if exists public.reserve_seat(text, text, text, boolean);
 create or replace function public.reserve_seat(
   p_name text,
   p_email text,
   p_phone text,
-  p_updates boolean
+  p_updates boolean,
+  p_cancel_hash text default null
 )
 returns table (
   status text,
@@ -95,10 +115,10 @@ begin
     return;
   end if;
 
-  select count(*) into taken from public.reservations x where x.event_id = ev.id;
+  select count(*) into taken from public.reservations x where x.event_id = ev.id and x.status = 'active';
 
   select * into r from public.reservations x where x.event_id = ev.id and x.email = lower(trim(p_email));
-  if found then
+  if found and r.status = 'active' then
     return query select 'existing'::text, r.id, r.seat, r.code, r.email_sent_at, taken;
     return;
   end if;
@@ -108,9 +128,21 @@ begin
     return;
   end if;
 
+  -- Cancelled earlier: the same row, and so the same seat, is theirs again.
+  if r.id is not null then
+    update public.reservations x
+    set name = trim(p_name), phone = trim(p_phone), updates = coalesce(p_updates, false),
+        cancel_hash = p_cancel_hash, status = 'active', cancelled_at = null,
+        email_sent_at = null, email_failed_at = null, created_at = now()
+    where x.id = r.id
+    returning * into r;
+    return query select 'created'::text, r.id, r.seat, r.code, r.email_sent_at, taken + 1;
+    return;
+  end if;
+
   select coalesce(max(x.seat), 0) + 1 into next_seat from public.reservations x where x.event_id = ev.id;
 
-  insert into public.reservations (event_id, seat, code, name, email, phone, updates)
+  insert into public.reservations (event_id, seat, code, name, email, phone, updates, cancel_hash)
   values (
     ev.id,
     next_seat,
@@ -118,7 +150,8 @@ begin
     trim(p_name),
     lower(trim(p_email)),
     trim(p_phone),
-    coalesce(p_updates, false)
+    coalesce(p_updates, false),
+    p_cancel_hash
   )
   returning * into r;
 
@@ -126,8 +159,8 @@ begin
 end;
 $$;
 
-revoke execute on function public.reserve_seat(text, text, text, boolean) from public, anon, authenticated;
-grant execute on function public.reserve_seat(text, text, text, boolean) to service_role;
+revoke execute on function public.reserve_seat(text, text, text, boolean, text) from public, anon, authenticated;
+grant execute on function public.reserve_seat(text, text, text, boolean, text) to service_role;
 
 -- Change the current gathering. Takes the same row lock as reserve_seat, so a booking and a
 -- capacity change can't interleave: capacity can never drop below the seats already taken.
@@ -156,7 +189,7 @@ begin
     return;
   end if;
 
-  select count(*) into taken from public.reservations x where x.event_id = ev.id;
+  select count(*) into taken from public.reservations x where x.event_id = ev.id and x.status = 'active';
   if p_capacity < taken then
     return query select 'too_low'::text, taken;
     return;
