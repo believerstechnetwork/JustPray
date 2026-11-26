@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  fieldsOf,
   isValidEmail,
   isValidPhone,
   validateContribution,
@@ -69,19 +70,50 @@ describe('validateRegistration', () => {
 });
 
 describe('validateContribution', () => {
-  it('accepts a valid contribution', () => {
-    expect(validateContribution(form({ amount: '5000', email: 'a@b.co' }))).toEqual({
+  const ok = { amount: '5000', name: ' Ada  Obi ', email: 'A@B.co' };
+  it('accepts and normalises a valid contribution', () => {
+    expect(validateContribution(form(ok))).toEqual({
       ok: true,
-      value: { amount: 5000, email: 'a@b.co' },
+      value: { currency: 'NGN', amount: 5000, name: 'Ada Obi', email: 'a@b.co' },
     });
   });
-  it('enforces the minimum', () => {
-    const r = validateContribution(form({ amount: '99', email: 'a@b.co' }));
-    expect(r.ok).toBe(false);
+  it('accepts dollars with their own limits, and rejects other currencies', () => {
+    expect(validateContribution(form({ ...ok, currency: 'usd', amount: '1' }))).toMatchObject({
+      ok: true,
+      value: { currency: 'USD', amount: 1 },
+    });
+    expect(validateContribution(form({ ...ok, currency: 'USD', amount: '0' })).ok).toBe(false);
+    expect(validateContribution(form({ ...ok, currency: 'USD', amount: '50001' })).ok).toBe(false);
+    expect(validateContribution(form({ ...ok, currency: 'EUR' })).ok).toBe(false);
   });
-  it('rejects fractions, junk and bad emails', () => {
-    expect(validateContribution(form({ amount: '100.5', email: 'a@b.co' })).ok).toBe(false);
-    expect(validateContribution(form({ amount: 'abc', email: 'a@b.co' })).ok).toBe(false);
-    expect(validateContribution(form({ amount: '500', email: 'bad' })).ok).toBe(false);
+  it('enforces the minimum and maximum', () => {
+    expect(validateContribution(form({ ...ok, amount: '99' })).ok).toBe(false);
+    expect(validateContribution(form({ ...ok, amount: '10000001' })).ok).toBe(false);
+  });
+  it('rejects fractions, junk, a missing name and bad emails', () => {
+    expect(validateContribution(form({ ...ok, amount: '100.5' })).ok).toBe(false);
+    expect(validateContribution(form({ ...ok, amount: 'abc' })).ok).toBe(false);
+    expect(validateContribution(form({ ...ok, name: 'A' })).ok).toBe(false);
+    expect(validateContribution(form({ ...ok, email: 'bad' })).ok).toBe(false);
+  });
+});
+
+describe('fieldsOf', () => {
+  it('reads JSON like FormData, with true as a ticked checkbox', () => {
+    const f = fieldsOf({ a: 'x', n: 5, yes: true, no: false, obj: {} });
+    expect([
+      f.get('a'),
+      f.get('n'),
+      f.get('yes'),
+      f.get('no'),
+      f.get('obj'),
+      f.get('missing'),
+    ]).toEqual(['x', '5', 'on', null, null, null]);
+  });
+  it('validates a JSON registration the same way as a form', () => {
+    const r = validateRegistration(
+      fieldsOf({ fullName: 'Ada Obi', email: 'a@b.co', phone: '+234 801 234 5678', privacy: true }),
+    );
+    expect(r.ok).toBe(true);
   });
 });

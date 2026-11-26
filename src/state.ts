@@ -1,58 +1,88 @@
-import { CAPACITY, DEFAULT_EVENT, DEMO_BASELINE, DEMO_MODE } from './config';
-import { LocalStore } from './data/local-store';
-import type { GatheringEvent, Reservation, Store } from './data/types';
+import type {
+  AdminData,
+  BankDetails,
+  Banks,
+  Currency,
+  GatheringEvent,
+  Reservation,
+} from './data/types';
 
-export type Route = 'home' | 'register' | 'confirmed' | 'support' | 'payment' | 'admin';
-export const ROUTES: readonly Route[] = [
-  'home',
-  'register',
-  'confirmed',
-  'support',
-  'payment',
-  'admin',
-];
+export type Route = 'home' | 'register' | 'confirmed' | 'support' | 'admin';
+export const ROUTES: readonly Route[] = ['home', 'register', 'confirmed', 'support', 'admin'];
 export type AdminTab = 'overview' | 'attendees' | 'contributions' | 'events';
-export type SupportStep = 'choose' | 'details' | 'checking' | 'pending';
+/** Support flow: choose an amount, see the bank details, then the thank-you note. */
+export type SupportStep = 'choose' | 'details' | 'sent';
 export type Theme = 'light' | 'dark';
 
 export interface UiState {
   page: Route;
   theme: Theme;
   menu: boolean;
-  /** Reservation made (or found) during this visit. */
+  /** 'loading' until the first /api/public answer arrives. */
+  load: 'loading' | 'ready' | 'error';
+  event: GatheringEvent | null;
+  reserved: number;
+  banks: Banks;
+  /** Account shown for the contribution in progress. */
+  bank: BankDetails | null;
+  /** A request (form submit) is in flight. */
+  busy: boolean;
+  /** Reservation made during this visit. */
   attendee: Reservation | null;
+  attendeeEmailed: boolean;
   registerErrors: Partial<Record<string, string>>;
   registerNotice: string;
+  currency: Currency;
   amount: number;
+  giverName: string;
   email: string;
+  reference: string;
   step: SupportStep;
   supportError: string;
   tab: AdminTab;
-  event: GatheringEvent;
-  eventSaved: boolean;
+  /** null: not checked yet; false: needs to sign in. */
+  adminAuthed: boolean | null;
+  admin: AdminData | null;
+  adminError: string;
+  adminNotice: string;
 }
-
-export const store: Store = new LocalStore({
-  capacity: CAPACITY,
-  baseline: DEMO_MODE ? DEMO_BASELINE : 0,
-  defaultEvent: DEFAULT_EVENT,
-});
 
 export const S: UiState = {
   page: 'home',
   theme: 'light',
   menu: false,
+  load: 'loading',
+  event: null,
+  reserved: 0,
+  banks: { NGN: null, USD: null },
+  bank: null,
+  busy: false,
   attendee: null,
+  attendeeEmailed: false,
   registerErrors: {},
   registerNotice: '',
+  currency: 'NGN',
   amount: 5000,
+  giverName: '',
   email: '',
+  reference: '',
   step: 'choose',
   supportError: '',
   tab: 'overview',
-  event: store.getEvent(),
-  eventSaved: false,
+  adminAuthed: null,
+  admin: null,
+  adminError: '',
+  adminNotice: '',
 };
 
-export const reserved = (): number => store.reservedCount();
-export const seatsLeft = (): number => CAPACITY - reserved();
+/** Preset contribution amounts per currency; the middle one is the default. */
+export const PRESETS: Record<Currency, number[]> = {
+  NGN: [2000, 5000, 10000],
+  USD: [10, 25, 50],
+};
+
+export const capacity = (): number => S.event?.capacity ?? 0;
+export const reserved = (): number => Math.min(S.reserved, capacity());
+export const seatsLeft = (): number => Math.max(0, capacity() - S.reserved);
+/** Seat counts are only meaningful once the gathering has loaded. */
+export const ready = (): boolean => S.load === 'ready' && S.event !== null;

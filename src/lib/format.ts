@@ -12,9 +12,9 @@ const ESCAPES: Record<string, string> = {
 export const esc = (value: unknown): string =>
   String(value ?? '').replace(/[&<>"']/g, (ch) => ESCAPES[ch] ?? ch);
 
-/** Format a number of naira, e.g. 5000 -> "₦5,000". */
-export const money = (amount: number | null | undefined): string =>
-  '₦' + Number(amount || 0).toLocaleString('en-NG');
+/** Format an amount, e.g. 5000 -> "₦5,000", or (25, 'USD') -> "$25". */
+export const money = (amount: number | null | undefined, currency: 'NGN' | 'USD' = 'NGN'): string =>
+  (currency === 'USD' ? '$' : '₦') + Number(amount || 0).toLocaleString('en-NG');
 
 /** Parse a YYYY-MM-DD date at midday local time, so time zones never shift the day. */
 export const parseDate = (isoDate: string): Date => new Date(`${isoDate}T12:00:00`);

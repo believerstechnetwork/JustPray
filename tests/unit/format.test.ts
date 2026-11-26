@@ -24,6 +24,7 @@ describe('esc', () => {
 describe('money', () => {
   it('formats naira with thousands separators', () => {
     expect(money(5000)).toBe('₦5,000');
+    expect(money(25, 'USD')).toBe('$25');
     expect(money(245000)).toBe('₦245,000');
   });
   it('treats missing values as zero', () => {
