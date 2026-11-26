@@ -571,7 +571,7 @@ html[data-mode='dark'] .check input {
   letter-spacing: -0.04em;
 }
 html[data-mode='dark'] .date-big .day {
-  color: var(--gold);
+  color: #fff;
 }
 .date-txt b {
   display: block;

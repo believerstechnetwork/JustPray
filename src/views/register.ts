@@ -22,7 +22,7 @@ export function register(): string {
   const panel = closed
     ? `<div class="panel"><h2>Reservations open soon.</h2><p>The next gathering hasn’t been announced yet. Please check back soon.</p></div>`
     : full
-      ? `<div class="panel"><h2>This gathering is full.</h2><p>All ${capacity()} seats are reserved. Please check back for next month's gathering.</p></div>`
+      ? `<div class="panel"><h2>This gathering is full.</h2><p>All ${capacity()} seats are reserved. Please check back for next month’s gathering.</p></div>`
       : `<form class="panel" data-form="register" novalidate><h2>Your details</h2><p>Fields marked * are required.</p>
   ${S.registerNotice ? `<div class="notice" role="status">${esc(S.registerNotice)}</div>` : ''}
   <div class="field"><label for="n">Full name *</label><input id="n" name="fullName" required autocomplete="name" value="${esc(name)}"${invalid('name')}>${fieldError('name')}</div>

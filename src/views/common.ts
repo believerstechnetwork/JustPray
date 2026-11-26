@@ -29,7 +29,7 @@ export const ICON = {
 /** Shown when the gathering details could not be loaded. */
 export const loadBanner = (): string =>
   S.load === 'error'
-    ? `<div class="demo" role="alert">We couldn't load the latest gathering details. <button class="link" data-action="retry" type="button">Try again</button></div>`
+    ? `<div class="demo" role="alert">We couldn’t load the latest gathering details. <button class="link" data-action="retry" type="button">Try again</button></div>`
     : '';
 
 /** Text that depends on loaded data: a placeholder until it arrives. */
