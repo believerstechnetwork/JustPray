@@ -33,6 +33,8 @@ create table if not exists public.reservations (
   cancelled_at timestamptz,
   -- SHA-256 of the private token in the "Cancel my seat" link. The token itself is never stored.
   cancel_hash text,
+  -- Set when the confirmation email could not be sent, so a later booking attempt may re-send it.
+  email_failed_at timestamptz,
   unique (event_id, email),
   unique (event_id, seat),
   unique (event_id, code)
@@ -62,6 +64,7 @@ alter table public.reservations
   add column if not exists status text not null default 'active' check (status in ('active', 'cancelled'));
 alter table public.reservations add column if not exists cancelled_at timestamptz;
 alter table public.reservations add column if not exists cancel_hash text;
+alter table public.reservations add column if not exists email_failed_at timestamptz;
 create unique index if not exists reservations_cancel_hash
   on public.reservations (cancel_hash) where cancel_hash is not null;
 
@@ -130,7 +133,7 @@ begin
     update public.reservations x
     set name = trim(p_name), phone = trim(p_phone), updates = coalesce(p_updates, false),
         cancel_hash = p_cancel_hash, status = 'active', cancelled_at = null,
-        email_sent_at = null, created_at = now()
+        email_sent_at = null, email_failed_at = null, created_at = now()
     where x.id = r.id
     returning * into r;
     return query select 'created'::text, r.id, r.seat, r.code, r.email_sent_at, taken + 1;

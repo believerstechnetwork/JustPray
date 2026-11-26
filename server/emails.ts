@@ -19,6 +19,13 @@ const C = {
   rule: '#DCE5F2',
 };
 const SERIF = "'Young Serif',Georgia,'Times New Roman',serif";
+
+/** A solid colour that mail apps' dark modes leave alone. Outlook and Gmail repaint background
+ *  colours in dark mode (indigo turns washed-out purple, gold turns brown), but they do not
+ *  repaint background images, so the colour is set as a one-colour gradient too. Use it only
+ *  where the text is already light, since the apps still lighten dark text. */
+const fixed = (colour: string): string =>
+  `background-color:${colour};background-image:linear-gradient(${colour},${colour})`;
 const SANS = "Figtree,'Segoe UI',Helvetica,Arial,sans-serif";
 
 const firstName = (name: string): string => name.trim().split(/\s+/)[0] || name;
@@ -31,7 +38,7 @@ interface Detail {
 /** A button that survives Outlook: a padded link inside a coloured table cell. */
 function button(label: string, href: string, kind: 'solid' | 'outline'): string {
   const solid = kind === 'solid';
-  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="display:inline-table;margin:0 8px 10px 0"><tr><td class="${solid ? 'btn-solid' : 'btn-outline'}" style="border-radius:12px;background:${solid ? C.indigo : C.card};border:1.5px solid ${solid ? C.indigo : C.rule}"><a href="${esc(href)}" style="display:inline-block;padding:13px 22px;font:600 15px/1 ${SANS};color:${solid ? '#FFFFFF' : C.indigo};text-decoration:none;border-radius:12px">${label}</a></td></tr></table>`;
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="display:inline-table;margin:0 8px 10px 0"><tr><td class="${solid ? 'btn-solid' : 'btn-outline'}" style="border-radius:12px;${solid ? fixed(C.indigo) : `background:${C.card}`};border:1.5px solid ${solid ? C.indigo : C.rule}"><a href="${esc(href)}" style="display:inline-block;padding:13px 22px;font:600 15px/1 ${SANS};color:${solid ? '#FFFFFF' : C.indigo};text-decoration:none;border-radius:12px">${label}</a></td></tr></table>`;
 }
 
 /** The pass: an indigo strip with the seat number in gold, then the details on a perforated stub. */
@@ -53,7 +60,7 @@ function pass(seat: number | null, details: Detail[], muted = false): string {
       ? ''
       : `<td align="right" valign="bottom" style="font:400 13px/1 ${SANS};letter-spacing:.12em;color:#C5D6F2">SEAT <span style="font:400 44px/1 ${SERIF};letter-spacing:0;color:${muted ? '#8FA3C8' : C.gold}">${seat}</span></td>`;
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;margin:28px 0 26px">
-<tr><td style="background:${C.indigo};border-radius:16px 16px 0 0;padding:20px 22px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td valign="bottom" style="font:600 12px/1 ${SANS};letter-spacing:.16em;text-transform:uppercase;color:#C5D6F2">${muted ? 'Cancelled' : 'Admit one'}</td>${seatCell}</tr></table></td></tr>
+<tr><td style="${fixed(C.indigo)};border-radius:16px 16px 0 0;padding:20px 22px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td valign="bottom" style="font:600 12px/1 ${SANS};letter-spacing:.16em;text-transform:uppercase;color:#C5D6F2">${muted ? 'Cancelled' : 'Admit one'}</td>${seatCell}</tr></table></td></tr>
 <tr><td class="stub" style="background:${C.tint};border-top:2px dashed ${C.rule};border-radius:0 0 16px 16px;padding:20px 22px 6px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${cells}</table></td></tr>
 </table>`;
 }
@@ -91,13 +98,13 @@ body,.bg{background:#081128 !important}.card{background:#0F1E44 !important}
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent">${esc(preheader)}${'&#8199;&#65279;&#847; '.repeat(40)}</div>
 <table role="presentation" class="bg" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${C.canvas}"><tr><td class="wrap" align="center" style="padding:32px 16px">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px">
-<tr><td style="background:${C.indigo};border-radius:20px 20px 0 0;padding:22px 28px">
+<tr><td style="${fixed(C.indigo)};border-radius:20px 20px 0 0;padding:22px 28px">
 <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-<td valign="middle"><a href="${esc(site)}"><img src="${esc(site)}/email/logo.png" width="150" height="48" alt="Believers Tech Network" style="display:block;border:0;width:150px;height:auto"></a></td>
+<td valign="middle"><a href="${esc(site)}" style="color:#FFFFFF;text-decoration:none"><img src="${esc(site)}/email/logo.png" width="150" height="48" alt="Believers Tech Network" style="display:block;border:0;width:150px;height:auto;color:#FFFFFF;font:600 15px/1.25 ${SANS};text-decoration:none"></a></td>
 <td valign="middle" style="padding:0 0 0 16px"><div style="width:1px;height:30px;background:#3A5296"></div></td>
 <td valign="middle" style="padding:0 0 0 16px;font:400 20px/1 ${SERIF};color:#FFFFFF;white-space:nowrap">Just Pray</td>
 </tr></table></td></tr>
-<tr><td style="height:4px;background:${C.gold};line-height:4px;font-size:0">&nbsp;</td></tr>
+<tr><td style="height:4px;${fixed(C.gold)};line-height:4px;font-size:0">&nbsp;</td></tr>
 <tr><td class="card" style="background:${C.card};border-radius:0 0 20px 20px;padding:36px 36px 30px;font:400 16px/1.6 ${SANS};color:${C.ink}">
 <h1 style="margin:0 0 12px;font:400 32px/1.15 ${SERIF};color:${C.ink}">${heading}</h1>
 ${body}
@@ -137,7 +144,7 @@ export function reservationEmail(input: ConfirmationInput): Email {
   const time = displayTime(event.time);
   const site = siteUrl.replace(/\/+$/, '');
   const calendar = googleCalendarUrl(event, site);
-  const ics = `${site}/api/event.ics`;
+  const ics = `${site}/api/event.ics?date=${event.date}`;
   const maps = mapsUrl(event.venue);
 
   const text = [

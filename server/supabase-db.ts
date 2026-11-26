@@ -96,6 +96,18 @@ export class SupabaseDb implements Db {
     return row ? toEvent(row) : null;
   }
 
+  async eventOn(isoDate: string): Promise<EventDetails | null> {
+    const rows = check(
+      await this.sb
+        .from('events')
+        .select('*')
+        .eq('date', isoDate)
+        .order('id', { ascending: false })
+        .limit(1),
+    ) as Row[];
+    return rows[0] ? toEvent(rows[0]) : null;
+  }
+
   async updateEvent(event: EventDetails): Promise<UpdateEventOutcome> {
     const rows = check(
       await this.sb.rpc('update_current_event', {
@@ -171,22 +183,41 @@ export class SupabaseDb implements Db {
     throw new Error(`Database error: unexpected reserve status ${status}`);
   }
 
-  async markEmailSent(reservationId: number): Promise<void> {
+  async markEmailSent(reservationId: number, cancelHash: string): Promise<void> {
     check(
       await this.sb
         .from('reservations')
         .update({ email_sent_at: new Date().toISOString() })
-        .eq('id', reservationId),
+        .eq('id', reservationId)
+        .eq('cancel_hash', cancelHash),
     );
   }
 
-  async setCancelHash(reservationId: number, cancelHash: string): Promise<void> {
+  async markEmailFailed(reservationId: number, cancelHash: string): Promise<void> {
     check(
       await this.sb
         .from('reservations')
-        .update({ cancel_hash: cancelHash })
-        .eq('id', reservationId),
+        .update({ email_failed_at: new Date().toISOString() })
+        .eq('id', reservationId)
+        .eq('cancel_hash', cancelHash)
+        .is('email_sent_at', null),
     );
+  }
+
+  async claimEmailRetry(reservationId: number, cancelHash: string): Promise<boolean> {
+    // One conditional update, so two requests at once cannot both claim the re-send. A booking
+    // with no hash at all predates cancel links; its earlier email counts as failed if unsent.
+    const rows = check(
+      await this.sb
+        .from('reservations')
+        .update({ cancel_hash: cancelHash, email_failed_at: null })
+        .eq('id', reservationId)
+        .eq('status', 'active')
+        .is('email_sent_at', null)
+        .or('email_failed_at.not.is.null,cancel_hash.is.null')
+        .select('id'),
+    ) as Row[];
+    return rows.length > 0;
   }
 
   async findByCancelHash(cancelHash: string): Promise<CancelLookup | null> {
@@ -207,13 +238,14 @@ export class SupabaseDb implements Db {
     return { reservation: toReservation(r), event: toEvent(ev), current: ev.is_current === true };
   }
 
-  async cancelReservation(reservationId: number): Promise<boolean> {
+  async cancelReservation(reservationId: number, cancelHash: string): Promise<boolean> {
     const rows = check(
       await this.sb
         .from('reservations')
         .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
         .eq('id', reservationId)
         .eq('status', 'active')
+        .eq('cancel_hash', cancelHash)
         .select('id'),
     ) as Row[];
     return rows.length > 0;

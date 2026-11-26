@@ -42,7 +42,7 @@ export function cancel(): string {
    date: info.event.date,
    time: info.event.time,
    venue: info.event.venue,
-   void: info.status !== 'active',
+   void: info.status === 'cancelled',
  })}`;
   }
 

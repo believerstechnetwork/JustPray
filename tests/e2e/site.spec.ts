@@ -123,9 +123,12 @@ test('keeping the seat leaves it booked', async ({ page }) => {
 });
 
 test('a broken cancel link says so', async ({ page }) => {
-  await page.goto('/#/cancel/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('This link isn’t working.');
-  await expect(page.getByRole('button', { name: 'Back to home' })).toBeVisible();
+  for (const link of ['/#/cancel/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', '/#/cancel', '/#/cancel/']) {
+    await page.goto(link);
+    await page.reload();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('This link isn’t working.');
+    await expect(page.getByRole('button', { name: 'Back to home' })).toBeVisible();
+  }
 });
 
 test('registration shows errors and keeps the user on the form', async ({ page }) => {

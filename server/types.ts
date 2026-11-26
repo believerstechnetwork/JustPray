@@ -95,18 +95,27 @@ export interface NewContribution {
 /** Storage used by the API. `SupabaseDb` in production, `MemoryDb` in tests and local dev. */
 export interface Db {
   currentEvent(): Promise<EventDetails | null>;
+  /** The gathering on this date (the latest saved, if several), current or not. */
+  eventOn(isoDate: string): Promise<EventDetails | null>;
   /** Refuses (and changes nothing) when capacity is below the seats already reserved. */
   updateEvent(event: EventDetails): Promise<UpdateEventOutcome>;
   /** Seats held now: cancelled reservations do not count. */
   reservedCount(): Promise<number>;
   /** A cancelled reservation for the same email is brought back (status 'created'). */
   reserve(input: NewReservation): Promise<ReserveOutcome>;
-  markEmailSent(reservationId: number): Promise<void>;
-  /** Replace the cancel token, e.g. when a confirmation email is sent again. */
-  setCancelHash(reservationId: number, cancelHash: string): Promise<void>;
+  /** Record that the confirmation carrying this cancel token was delivered. Does nothing when
+   *  the booking has since moved on to another token (cancelled and booked again). */
+  markEmailSent(reservationId: number, cancelHash: string): Promise<void>;
+  /** Record that the confirmation carrying this cancel token could not be sent. */
+  markEmailFailed(reservationId: number, cancelHash: string): Promise<void>;
+  /** Claim a re-send of a confirmation that failed, giving it a new cancel token. True for the
+   *  one caller that claims it; false while an earlier email may still be on its way, once it
+   *  was delivered, or when another request claimed it first. */
+  claimEmailRetry(reservationId: number, cancelHash: string): Promise<boolean>;
   findByCancelHash(cancelHash: string): Promise<CancelLookup | null>;
-  /** True when this call cancelled it; false when it was already cancelled or is unknown. */
-  cancelReservation(reservationId: number): Promise<boolean>;
+  /** Cancel the booking only if it is active and still holds this cancel token. True when this
+   *  call cancelled it. */
+  cancelReservation(reservationId: number, cancelHash: string): Promise<boolean>;
   /** Every reservation for the current gathering, cancelled ones included. */
   listReservations(): Promise<ReservationRecord[]>;
   /** Returns null when the reference is already taken. */

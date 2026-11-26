@@ -13,10 +13,17 @@ import type {
 
 /** In-memory storage with the same rules as `supabase/schema.sql`.
  *  Used by unit tests, local development and the end-to-end tests. */
-type StoredReservation = ReservationRecord & { cancelHash: string | null };
+type StoredReservation = ReservationRecord & {
+  cancelHash: string | null;
+  emailFailedAt: string | null;
+};
 
 /** A copy without the stored cancel hash, which never leaves the database. */
-const plain = ({ cancelHash: _hash, ...r }: StoredReservation): ReservationRecord => ({ ...r });
+const plain = ({
+  cancelHash: _hash,
+  emailFailedAt: _failed,
+  ...r
+}: StoredReservation): ReservationRecord => ({ ...r });
 
 export class MemoryDb implements Db {
   event: EventDetails | null;
@@ -32,6 +39,10 @@ export class MemoryDb implements Db {
 
   async currentEvent(): Promise<EventDetails | null> {
     return this.event ? { ...this.event } : null;
+  }
+
+  async eventOn(isoDate: string): Promise<EventDetails | null> {
+    return this.event?.date === isoDate ? { ...this.event } : null;
   }
 
   private active(): ReservationRecord[] {
@@ -67,6 +78,7 @@ export class MemoryDb implements Db {
         status: 'active',
         cancelledAt: null,
         emailSentAt: null,
+        emailFailedAt: null,
         createdAt: this.now().toISOString(),
       });
       return { status: 'created', ...pick(existing), reserved: taken + 1 };
@@ -85,19 +97,30 @@ export class MemoryDb implements Db {
       status: 'active',
       cancelledAt: null,
       cancelHash: input.cancelHash,
+      emailFailedAt: null,
     };
     this.reservations.push(r);
     return { status: 'created', ...pick(r), reserved: taken + 1 };
   }
 
-  async markEmailSent(reservationId: number): Promise<void> {
+  async markEmailSent(reservationId: number, cancelHash: string): Promise<void> {
     const r = this.reservations.find((x) => x.id === reservationId);
-    if (r) r.emailSentAt = this.now().toISOString();
+    if (r && r.cancelHash === cancelHash) r.emailSentAt = this.now().toISOString();
   }
 
-  async setCancelHash(reservationId: number, cancelHash: string): Promise<void> {
+  async markEmailFailed(reservationId: number, cancelHash: string): Promise<void> {
     const r = this.reservations.find((x) => x.id === reservationId);
-    if (r) r.cancelHash = cancelHash;
+    if (r && r.cancelHash === cancelHash && r.emailSentAt === null)
+      r.emailFailedAt = this.now().toISOString();
+  }
+
+  async claimEmailRetry(reservationId: number, cancelHash: string): Promise<boolean> {
+    const r = this.reservations.find((x) => x.id === reservationId);
+    const failed = r?.emailFailedAt !== null || r?.cancelHash === null;
+    if (!r || r.status !== 'active' || r.emailSentAt !== null || !failed) return false;
+    r.cancelHash = cancelHash;
+    r.emailFailedAt = null;
+    return true;
   }
 
   async findByCancelHash(cancelHash: string): Promise<CancelLookup | null> {
@@ -106,9 +129,9 @@ export class MemoryDb implements Db {
     return { reservation: plain(r), event: { ...this.event }, current: true };
   }
 
-  async cancelReservation(reservationId: number): Promise<boolean> {
+  async cancelReservation(reservationId: number, cancelHash: string): Promise<boolean> {
     const r = this.reservations.find((x) => x.id === reservationId);
-    if (!r || r.status !== 'active') return false;
+    if (!r || r.status !== 'active' || r.cancelHash !== cancelHash) return false;
     r.status = 'cancelled';
     r.cancelledAt = this.now().toISOString();
     return true;

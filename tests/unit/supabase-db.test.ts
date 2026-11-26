@@ -299,13 +299,44 @@ describe('SupabaseDb', () => {
     expect(seen[1]?.query).toContain('id=eq.4');
   });
 
-  it('cancels only an active reservation, once', async () => {
+  it('cancels only an active reservation that still holds the checked token, once', async () => {
     const { db, seen } = fakeSupabase([{ body: [{ id: 9 }] }, { body: [] }]);
-    expect(await db.cancelReservation(9)).toBe(true);
-    expect(await db.cancelReservation(9)).toBe(false);
+    expect(await db.cancelReservation(9, 'h1')).toBe(true);
+    expect(await db.cancelReservation(9, 'h1')).toBe(false);
     expect(seen[0]).toMatchObject({ method: 'PATCH', path: '/rest/v1/reservations' });
     expect(seen[0]?.query).toContain('status=eq.active');
+    expect(seen[0]?.query).toContain('cancel_hash=eq.h1');
     expect(seen[0]?.body).toMatchObject({ status: 'cancelled' });
+  });
+
+  it('records email delivery and failure against the token that was sent', async () => {
+    const { db, seen } = fakeSupabase([{ body: [] }, { body: [] }]);
+    await db.markEmailSent(9, 'h1');
+    await db.markEmailFailed(9, 'h1');
+    expect(seen[0]?.query).toContain('cancel_hash=eq.h1');
+    expect(seen[0]?.body).toHaveProperty('email_sent_at');
+    expect(seen[1]?.query).toContain('cancel_hash=eq.h1');
+    expect(seen[1]?.query).toContain('email_sent_at=is.null');
+    expect(seen[1]?.body).toHaveProperty('email_failed_at');
+  });
+
+  it('claims a re-send in one conditional update', async () => {
+    const { db, seen } = fakeSupabase([{ body: [{ id: 9 }] }, { body: [] }]);
+    expect(await db.claimEmailRetry(9, 'h2')).toBe(true);
+    expect(await db.claimEmailRetry(9, 'h3')).toBe(false);
+    expect(seen[0]).toMatchObject({
+      method: 'PATCH',
+      body: { cancel_hash: 'h2', email_failed_at: null },
+    });
+    expect(seen[0]?.query).toContain('email_sent_at=is.null');
+    expect(seen[0]?.query).toContain('or=(email_failed_at.not.is.null,cancel_hash.is.null)');
+  });
+
+  it('finds a gathering by its date, the latest saved first', async () => {
+    const { db, seen } = fakeSupabase([{ body: [] }]);
+    expect(await db.eventOn('2027-01-30')).toBeNull();
+    expect(seen[0]?.query).toContain('date=eq.2027-01-30');
+    expect(seen[0]?.query).toContain('order=id.desc');
   });
 
   it('maps contribution rows', async () => {

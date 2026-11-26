@@ -175,7 +175,7 @@ async function cancelSeat(): Promise<void> {
       seatCount.applyLatest(() => (S.reserved = left));
     }
     // A seat booked earlier in this visit no longer has a pass to show.
-    if (S.attendee?.cancelToken === token) S.attendee = null;
+    if (info.status === 'cancelled' && S.attendee?.cancelToken === token) S.attendee = null;
   } catch (e) {
     S.cancel.error = errorMessage(e);
   }
@@ -187,7 +187,10 @@ function applyRoute(): void {
   const route = routeFromHash();
   if (route === 'cancel') {
     const token = hashParts()[1] ?? '';
-    if (token !== S.cancel.token || S.cancel.load === 'error') void loadCancel(token);
+    if (!token)
+      // "#/cancel" with nothing after it: there is nothing to look up.
+      S.cancel = { token: '', load: 'error', info: null, error: '', justCancelled: false };
+    else if (token !== S.cancel.token || S.cancel.load === 'error') void loadCancel(token);
   }
   // The confirmation page only makes sense after a reservation.
   S.page = route === 'confirmed' && !S.attendee ? 'register' : route;

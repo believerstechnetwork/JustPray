@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   csvCell,
   handleApi,
@@ -369,6 +369,17 @@ describe('organiser API', () => {
 });
 
 describe('cancelling a seat', () => {
+  // The gathering is on 30 January 2027 at 16:00 WAT, and cancelling closes an hour after it
+  // starts. Fix the clock ten days before, so these tests do not start failing after that date.
+  // Only Date is faked: timers and promises run as normal.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2027-01-20T12:00:00Z'));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   const book = async (email = 'ada@example.com') => {
     const { data } = await call('POST', '/api/reserve', person(email));
     await Promise.all(deferred);
@@ -457,9 +468,13 @@ describe('cancelling a seat', () => {
     );
   });
 
-  it('closes cancelling once the gathering has started', async () => {
-    deps.db = db = new MemoryDb({ ...EVENT, date: '2020-01-30' });
+  it('closes cancelling an hour after the gathering starts', async () => {
     const token = await book();
+    vi.setSystemTime(new Date('2027-01-30T15:59:00Z')); // 16:59 WAT: still open
+    expect((await call('POST', '/api/cancel/lookup', { token })).data).toMatchObject({
+      status: 'active',
+    });
+    vi.setSystemTime(new Date('2027-01-30T16:01:00Z')); // 17:01 WAT: closed
     expect((await call('POST', '/api/cancel/lookup', { token })).data).toMatchObject({
       status: 'ended',
     });
@@ -477,6 +492,62 @@ describe('cancelling a seat', () => {
     const fresh = /#\/cancel\/([A-Za-z0-9_-]+)/.exec(mailer.sent[0]?.text ?? '')?.[1] ?? '';
     expect((await call('POST', '/api/cancel/lookup', { token: fresh })).status).toBe(200);
     expect((await call('POST', '/api/cancel/lookup', { token: old })).status).toBe(404);
+  });
+
+  it('does not replace the link while the first confirmation is still on its way', async () => {
+    let finish: () => void = () => undefined;
+    deps.mailer = {
+      kind: 'slow',
+      send: (e) =>
+        new Promise<void>((resolve) => {
+          finish = () => {
+            mailer.sent.push(e);
+            resolve();
+          };
+        }),
+    };
+    const { data } = await call('POST', '/api/reserve', person('ada@example.com'));
+    const token = (data.reservation as { cancelToken: string }).cancelToken;
+    // A second attempt while the first email is unfinished sends nothing and keeps the link.
+    const again = await call('POST', '/api/reserve', person('ada@example.com'));
+    expect(again.data.emailQueued).toBe(false);
+    finish();
+    await Promise.all(deferred);
+    expect(mailer.sent).toHaveLength(1);
+    expect(mailer.sent[0]?.text).toContain(token);
+    expect((await call('POST', '/api/cancel/lookup', { token })).status).toBe(200);
+    expect(db.reservations[0]?.emailSentAt).not.toBeNull();
+  });
+
+  it('marks only the booking whose email was delivered as emailed', async () => {
+    let finish: () => void = () => undefined;
+    deps.mailer = {
+      kind: 'slow',
+      send: () => new Promise<void>((resolve) => (finish = resolve)),
+    };
+    const { data } = await call('POST', '/api/reserve', person('ada@example.com'));
+    const first = (data.reservation as { cancelToken: string }).cancelToken;
+    // Cancelled and booked again before the first email finished; the new email fails.
+    const firstSend = finish;
+    deps.mailer = mailer;
+    await call('POST', '/api/cancel', { token: first });
+    deps.mailer = { kind: 'broken', send: () => Promise.reject(new Error('smtp down')) };
+    await call('POST', '/api/reserve', person('ada@example.com'));
+    firstSend();
+    await Promise.all(deferred);
+    // The old email arriving late does not count as the new booking's confirmation.
+    expect(db.reservations[0]?.emailSentAt).toBeNull();
+    deps.mailer = mailer;
+    expect((await call('POST', '/api/reserve', person('ada@example.com'))).data.emailQueued).toBe(
+      true,
+    );
+  });
+
+  it('cancels only with the token that is current for the booking', async () => {
+    await book();
+    const r = db.reservations[0];
+    expect(await db.cancelReservation(r?.id ?? 0, 'stale-hash')).toBe(false);
+    expect(db.reservations[0]?.status).toBe('active');
   });
 
   it('shows cancelled seats to organisers and counts only held seats', async () => {
@@ -512,6 +583,18 @@ describe('event time and calendar', () => {
     const bad = await call('PUT', '/api/admin/event', { ...EVENT, time: 'evening' }, adminCookie());
     expect(bad.status).toBe(400);
     expect(bad.data.error).toBe('Choose a start time.');
+  });
+
+  it('serves the calendar file for the gathering named in the email', async () => {
+    const named = await call('GET', '/api/event.ics?date=2027-01-30');
+    expect(named.status).toBe(200);
+    // After the organisers move on to another date, an older email's link does not give the
+    // newer gathering.
+    await call('PUT', '/api/admin/event', { ...EVENT, date: '2027-02-27' }, adminCookie());
+    expect((await call('GET', '/api/event.ics?date=2027-01-30')).status).toBe(404);
+    expect(await (await call('GET', '/api/event.ics?date=2027-02-27')).res.text()).toContain(
+      'DTSTART:20270227T150000Z',
+    );
   });
 
   it('serves a calendar file for the current gathering', async () => {

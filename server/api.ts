@@ -230,23 +230,35 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
     sendLater(`Confirmation email for ${held.code}`, async (mailer) => {
       const { seat, code } = held;
       const link = cancelUrl(cancelToken);
-      await mailer.send(
-        reservationEmail({ name, email, seat, code, event, siteUrl, cancelUrl: link }),
-      );
-      await db().markEmailSent(held.id);
+      const hash = hashToken(cancelToken);
+      try {
+        await mailer.send(
+          reservationEmail({ name, email, seat, code, event, siteUrl, cancelUrl: link }),
+        );
+      } catch (e) {
+        // Only a failure that is recorded lets a later booking attempt re-send the email.
+        await db()
+          .markEmailFailed(held.id, hash)
+          .catch(() => undefined);
+        throw e;
+      }
+      // Tied to this email's token: if the seat was cancelled and booked again meanwhile, the
+      // newer booking's own email decides whether it was delivered.
+      await db().markEmailSent(held.id, hash);
     });
 
   /** Find the reservation behind a cancel link, and whether it can still be cancelled. */
   const lookUpCancel = async (body: unknown) => {
     const token = field(body, 'token');
     if (typeof token !== 'string' || !TOKEN_RE.test(token)) return null;
-    const found = await db().findByCancelHash(hashToken(token));
+    const hash = hashToken(token);
+    const found = await db().findByCancelHash(hash);
     if (!found) return null;
     const start = startsAt(found.event.date, found.event.time);
     const endOfDay = new Date(`${found.event.date}T23:59:59+01:00`).getTime();
     const closesAt = start ? start.getTime() + CANCEL_GRACE_MS : endOfDay;
     const ended = !found.current || Date.now() > closesAt;
-    return { ...found, ended };
+    return { ...found, hash, ended };
   };
 
   const cancelView = (found: NonNullable<Awaited<ReturnType<typeof lookUpCancel>>>) => ({
@@ -293,13 +305,14 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
       if (outcome.status === 'full')
         return json(409, { status: 'full', reserved: outcome.reserved, capacity: event.capacity });
       if (outcome.status === 'existing') {
-        // Never echo someone else's details back. Re-send only if the first email failed, with a
-        // fresh cancel link: the earlier one never reached the inbox.
+        // Never echo someone else's details back. Re-send only a confirmation that is known to
+        // have failed (not one still on its way), with a fresh cancel link: the earlier link never
+        // reached the inbox. The claim is atomic, so two attempts at once send one email.
         let emailQueued = false;
         if (outcome.emailSentAt === null && deps.mailer) {
           const fresh = newCancelToken();
-          await db().setCancelHash(outcome.id, hashToken(fresh));
-          emailQueued = sendConfirmation(outcome, name, email, event, fresh);
+          if (await db().claimEmailRetry(outcome.id, hashToken(fresh)))
+            emailQueued = sendConfirmation(outcome, name, email, event, fresh);
         }
         return json(200, {
           status: 'existing',
@@ -319,8 +332,13 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
     }
 
     if (path === '/api/event.ics' && method === 'GET') {
-      const event = await db().currentEvent();
-      if (!event) return fail(404, 'No gathering is set up yet.');
+      // Emails name their gathering by date, so an older email keeps giving its own gathering
+      // after the next one is set up.
+      const date = url.searchParams.get('date') ?? '';
+      const event = /^\d{4}-\d{2}-\d{2}$/.test(date)
+        ? await db().eventOn(date)
+        : await db().currentEvent();
+      if (!event) return fail(404, 'That gathering is not listed any more.');
       return new Response(icsFile(event, siteUrl), {
         status: 200,
         headers: {
@@ -342,7 +360,11 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
       const found = await lookUpCancel(body);
       if (!found) return fail(404, BAD_LINK);
       const r = found.reservation;
-      if (r.status === 'active' && !found.ended && (await db().cancelReservation(r.id))) {
+      if (
+        r.status === 'active' &&
+        !found.ended &&
+        (await db().cancelReservation(r.id, found.hash))
+      ) {
         sendLater(`Cancellation email for ${r.code}`, (mailer) =>
           mailer.send(
             cancelledEmail({
