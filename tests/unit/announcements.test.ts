@@ -428,7 +428,30 @@ describe('review fixes', () => {
     const init = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1];
     expect((init.headers as Record<string, string>)['Idempotency-Key']).toBe('k-1');
     expect(JSON.parse(String(init.body))).not.toHaveProperty('idempotencyKey');
-    expect(resend.canRetry()).toBe(true);
+  });
+
+  it('retries a Resend failure only when Resend answered and refused the email', async () => {
+    const resend = new ResendMailer('key', 'Just Pray <hi@x.co>');
+    const failWith = async (res: () => Promise<Response>): Promise<unknown> => {
+      vi.stubGlobal('fetch', vi.fn(res));
+      return resend.send({ to: 'a@b.co', subject: 's', text: 't', html: 'h' }).then(
+        () => null,
+        (e: unknown) => e,
+      );
+    };
+    expect(resend.canRetry(await failWith(async () => new Response('', { status: 429 })))).toBe(
+      true,
+    );
+    // A 5xx or a timeout may come after Resend took the email; a retry could land after the
+    // idempotency key's 24 hours, so neither is retried.
+    expect(resend.canRetry(await failWith(async () => new Response('', { status: 502 })))).toBe(
+      false,
+    );
+    expect(
+      resend.canRetry(
+        await failWith(() => Promise.reject(new DOMException('timed out', 'TimeoutError'))),
+      ),
+    ).toBe(false);
   });
 
   it('retries a Gmail failure only when Gmail certainly did not take the email', () => {

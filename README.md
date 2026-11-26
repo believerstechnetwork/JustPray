@@ -46,7 +46,7 @@ still work but no email is sent (the organiser view shows a warning).
   `send-announcements` sends the next batch every two minutes, up to `ANNOUNCE_DAILY_LIMIT`
   (default 350) a day so Gmail's limit is never hit; a large list finishes the next day. Each
   person gets an email at most once: a send the mail service refused is retried (3 attempts in
-  all), but one that may have gone out (a timeout, or a run that stopped mid-send) is not.
+  all), but one that may have gone out (a timeout, a server error, or a run that stopped mid-send) is not.
 - **Support:** the giver picks naira or dollars, an amount, and enters their name and email. They get the
   account for that currency and a unique reference (for example `JP-7K3QX`) to put in the transfer
   description. "I've sent it" marks it as ready to check.

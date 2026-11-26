@@ -90,13 +90,17 @@ export class ResendMailer implements Mailer {
       }),
       signal: AbortSignal.timeout(10000),
     });
-    if (!res.ok) throw new Error(`Resend returned HTTP ${res.status}`);
+    if (!res.ok)
+      throw Object.assign(new Error(`Resend returned HTTP ${res.status}`), { status: res.status });
   }
 
-  /** Resend drops a repeat with the same idempotency key (kept for 24 hours), so a retry after
-   *  any failure, a timeout included, cannot send the email twice. */
-  canRetry(): boolean {
-    return true;
+  /** Safe to send again only when Resend answered and refused the email (a 4xx such as 429
+   *  "slow down"). A timeout, a dropped connection or a 5xx may come after Resend took it, and
+   *  the idempotency key only lasts 24 hours while a queued retry can wait longer behind the
+   *  daily limit, so those are not retried. */
+  canRetry(error: unknown): boolean {
+    const status = (error as { status?: unknown } | null)?.status;
+    return typeof status === 'number' && status >= 400 && status < 500;
   }
 }
 
