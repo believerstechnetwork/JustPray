@@ -374,6 +374,15 @@ test('while an import is sending, the panel cannot be left, swapped or submitted
   await expect(page.getByRole('button', { name: 'Choose another file' })).toBeDisabled();
   // Pressing Enter in the label field does not send it again.
   await page.getByLabel('Label for this list').press('Enter');
+  // Nor does leaving through the tabs: Announcements comes back to this import, still sending,
+  // with no file picker for another one.
+  await page.getByRole('button', { name: 'Announcements', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Importing…' })).toBeDisabled();
+  await expect(page.locator('#imp-file')).toHaveCount(0);
+  await page.locator('[data-tab]').first().click();
+  await page.getByRole('button', { name: 'Announcements', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Importing…' })).toBeDisabled();
+  await expect(page.locator('#imp-file')).toHaveCount(0);
   release();
   await expect(page.getByRole('heading', { name: 'Import complete' })).toBeVisible();
   expect(requests).toBe(1);

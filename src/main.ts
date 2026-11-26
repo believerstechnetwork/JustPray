@@ -238,10 +238,12 @@ async function preferences(action?: 'unsubscribe' | 'resubscribe'): Promise<void
 
 /** Read a chosen Excel or CSV file in the browser, for the organiser to check before importing. */
 let importReads = 0;
+/** An import is sending. Kept apart from the view state, so no navigation can clear it. */
+let importInFlight = false;
 async function readImportFile(input: HTMLInputElement): Promise<void> {
   const file = input.files?.[0];
   // Never while an import is sending: its result and its saved progress belong to that file.
-  if (!file || S.ann.importing?.sending) return;
+  if (!file || importInFlight) return;
   // Only the latest file chosen, in the import panel that chose it, shows its result: an earlier
   // read that finishes late, or one whose panel was left, changes nothing (but still frees busy).
   const read = ++importReads;
@@ -279,7 +281,7 @@ async function readImportFile(input: HTMLInputElement): Promise<void> {
 
 async function submitImport(data: FormData): Promise<void> {
   const im = S.ann.importing;
-  if (!im || S.busy || im.sending) return;
+  if (!im || S.busy || im.sending || importInFlight) return;
   // The label is fixed once part of the list is saved, so every batch carries the same one.
   if (!im.progress?.done) im.label = String(data.get('label') ?? '').trim();
   if (im.contacts.length > MAX_IMPORT_PEOPLE) {
@@ -289,6 +291,7 @@ async function submitImport(data: FormData): Promise<void> {
   // Marks this import as sending until it settles: no file can be read, no other submit can
   // start, and the panel cannot be left or swapped meanwhile. Only this submit clears it.
   im.sending = true;
+  importInFlight = true;
   S.busy = true;
   S.ann.error = '';
   render();
@@ -323,6 +326,7 @@ async function submitImport(data: FormData): Promise<void> {
     }
   }
   im.sending = false;
+  importInFlight = false;
   S.busy = false;
   render();
 }
@@ -820,8 +824,14 @@ document.addEventListener('click', async (e) => {
       annEditor++;
       S.ann.editing = null;
       S.ann.confirming = false;
-      S.ann.panel = 'list';
-      S.ann.importing = null;
+      if (S.ann.importing?.sending) {
+        // An import is still sending: come back to it, never to a fresh panel that could start
+        // another one or lose this one's result.
+        S.ann.panel = 'import';
+      } else {
+        S.ann.panel = 'list';
+        S.ann.importing = null;
+      }
       void loadAnnouncements();
     }
     return render();
