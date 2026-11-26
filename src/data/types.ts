@@ -48,6 +48,8 @@ export interface Announcement extends Omit<UpcomingEvent, 'id'> {
   status: 'draft' | 'published';
   publishedAt: string | null;
   sentCount: number;
+  /** Emails closed without delivery (failed, or the person unsubscribed). */
+  unsentCount: number;
   recipients: number;
   audience: AudienceScope | null;
   createdAt: string;
@@ -83,7 +85,14 @@ export interface ImportOutcome {
 
 export type AnnouncementForm = Omit<
   Announcement,
-  'id' | 'status' | 'publishedAt' | 'sentCount' | 'recipients' | 'audience' | 'createdAt'
+  | 'id'
+  | 'status'
+  | 'publishedAt'
+  | 'sentCount'
+  | 'unsentCount'
+  | 'recipients'
+  | 'audience'
+  | 'createdAt'
 >;
 
 export interface PublicInfo {

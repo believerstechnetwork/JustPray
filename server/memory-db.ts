@@ -209,8 +209,16 @@ export class MemoryDb implements Db {
     return [...this.contributions].reverse().map((c) => ({ ...c }));
   }
 
+  /** A copy of the announcement, with its count of emails closed without delivery. */
+  private view(a: AnnouncementRecord): AnnouncementRecord {
+    const unsentCount = this.outbox.filter(
+      (o) => o.announcementId === a.id && (o.status === 'failed' || o.status === 'skipped'),
+    ).length;
+    return { ...a, unsentCount };
+  }
+
   async listAnnouncements(): Promise<AnnouncementRecord[]> {
-    return [...this.announcements].reverse().map((a) => ({ ...a }));
+    return [...this.announcements].reverse().map((a) => this.view(a));
   }
 
   async createAnnouncement(fields: AnnouncementFields): Promise<AnnouncementRecord> {
@@ -220,12 +228,13 @@ export class MemoryDb implements Db {
       status: 'draft',
       publishedAt: null,
       sentCount: 0,
+      unsentCount: 0,
       audience: null,
       recipients: 0,
       createdAt: this.now().toISOString(),
     };
     this.announcements.push(a);
-    return { ...a };
+    return this.view(a);
   }
 
   async updateAnnouncement(
@@ -235,7 +244,7 @@ export class MemoryDb implements Db {
     const a = this.announcements.find((x) => x.id === id);
     if (!a) return null;
     Object.assign(a, fields);
-    return { ...a };
+    return this.view(a);
   }
 
   async deleteDraftAnnouncement(id: number): Promise<boolean> {
@@ -247,7 +256,7 @@ export class MemoryDb implements Db {
 
   async announcementById(id: number): Promise<AnnouncementRecord | null> {
     const a = this.announcements.find((x) => x.id === id);
-    return a ? { ...a } : null;
+    return a ? this.view(a) : null;
   }
 
   async publishAnnouncement(id: number, scope: AudienceScope): Promise<AnnouncementRecord | null> {
@@ -279,7 +288,7 @@ export class MemoryDb implements Db {
       recipients: people.length,
       audience: scope,
     });
-    return { ...a };
+    return this.view(a);
   }
 
   async claimOutbox(limit: number, dailyLimit: number) {
@@ -401,7 +410,7 @@ export class MemoryDb implements Db {
       ),
       todayIso,
       limit,
-    ).map((a) => ({ ...a }));
+    ).map((a) => this.view(a));
   }
 
   async updatesAudience(scope: AudienceScope = 'all'): Promise<AudienceMember[]> {

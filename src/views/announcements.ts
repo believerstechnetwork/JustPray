@@ -128,16 +128,24 @@ const photoUrl = (k: keyof typeof IMG): string => new URL(IMG[k], location.origi
 const people = (n: number): string =>
   `${n.toLocaleString('en-GB')} ${n === 1 ? 'person' : 'people'}`;
 
-/** "Emailed to 412 people", or "Sending: 120 of 412" while the outbox works through it. */
-const progress = (x: Announcement): string =>
-  x.sentCount < x.recipients
-    ? `Sending: ${x.sentCount.toLocaleString('en-GB')} of ${people(x.recipients)}`
+const num = (n: number): string => n.toLocaleString('en-GB');
+/** Sending is finished once every email is delivered or closed without delivery. */
+const sending = (x: Announcement): boolean => x.sentCount + (x.unsentCount ?? 0) < x.recipients;
+
+/** "Sending: 120 of 412 people" while the outbox works through it, then "Emailed to 412 people",
+ *  or "Emailed 410 of 412 people · 2 not sent" when some failed or had unsubscribed. */
+const progress = (x: Announcement): string => {
+  const unsent = x.unsentCount ?? 0;
+  if (sending(x)) return `Sending: ${num(x.sentCount)} of ${people(x.recipients)}`;
+  return unsent > 0
+    ? `Emailed ${num(x.sentCount)} of ${people(x.recipients)} · ${num(unsent)} not sent`
     : `Emailed to ${people(x.recipients)}`;
+};
 
 const statusOf = (x: Announcement): string => {
   const ended = (x.endDate ?? x.date) < new Date().toISOString().slice(0, 10);
   if (x.status === 'draft') return '<span class="status mute">Draft</span>';
-  return `<span class="status ${ended ? 'mute' : x.sentCount < x.recipients ? 'warn' : 'ok'}">${ended ? 'Ended' : 'Published'}</span><small>${progress(x)}</small>`;
+  return `<span class="status ${ended ? 'mute' : sending(x) ? 'warn' : 'ok'}">${ended ? 'Ended' : 'Published'}</span><small>${progress(x)}</small>`;
 };
 
 /** The mailing list: how many people announcements reach, and where they came from. */
@@ -287,7 +295,7 @@ function confirmDialog(): string {
   <div class="ann-send">${box('booked', 'People who booked a seat and asked for updates', a.counts.booked)}${box('imported', 'People imported from Excel', a.counts.imported)}</div>
   <p>It will be emailed to <b>${people(n)}</b> and appear on the home page.${days > 1 ? ` To stay within the daily email limit, sending takes about ${days} days.` : ''} An email cannot be called back once sent.</p>
   ${a.error ? `<p class="err" role="alert">${esc(a.error)}</p>` : ''}
-  <div class="actions"><button class="btn ind" type="button" data-action="ann-confirm"${S.busy || n === 0 ? ' disabled' : ''}>${S.busy ? 'Publishing…' : n === 0 ? 'Choose who to send to' : `Publish and email ${n.toLocaleString('en-GB')}`}</button><button class="link" type="button" data-action="ann-cancel" data-dialog-close>Cancel</button></div></div></div>`;
+  <div class="actions"><button class="btn ind" type="button" data-action="ann-confirm"${S.busy || n === 0 ? ' disabled' : ''}>${S.busy ? 'Publishing…' : n === 0 ? 'Choose who to send to' : `Publish and email ${n.toLocaleString('en-GB')}`}</button><button class="link" type="button" data-action="ann-cancel" data-dialog-close${S.busy ? ' disabled' : ''}>Cancel</button></div></div></div>`;
 }
 
 export function announcementsTab(): string {

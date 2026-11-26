@@ -21,7 +21,7 @@ export interface OutboxDeps {
   log?: (message: string, error?: unknown) => void;
 }
 
-type Result = 'sent' | 'failed' | 'skipped' | 'quota' | 'lost';
+type Result = 'sent' | 'failed' | 'skipped' | 'quota' | 'lost' | 'timeUp';
 
 export async function processOutbox(deps: OutboxDeps): Promise<{ sent: number; failed: number }> {
   const { db, mailer, limit, dailyLimit } = deps;
@@ -78,6 +78,14 @@ export async function processOutbox(deps: OutboxDeps): Promise<{ sent: number; f
       siteUrl: site,
       unsubscribeUrl,
     });
+    // The lookups above (or the claim itself) may have run past the time budget. Then this email
+    // is not started: it goes back in the queue without using an attempt, and the batch stops.
+    if (timeUp()) {
+      await db
+        .finishOutbox(item.id, item.claimToken, 'later', 'Not tried in this run')
+        .catch((err: unknown) => log(`Could not requeue outbox item ${item.id}`, err));
+      return 'timeUp';
+    }
     // Start sending, in one step that only the run holding the claim can take. A run that stalled
     // past its claim (given back to the queue, or taken by another run) stops here.
     try {
@@ -169,7 +177,7 @@ export async function processOutbox(deps: OutboxDeps): Promise<{ sent: number; f
       const result = await sendOne(item);
       if (result === 'sent') sent++;
       else if (result === 'failed') failed++;
-      else if (result === 'quota') stop = true;
+      else if (result === 'quota' || result === 'timeUp') stop = true;
     }
   }
   return { sent, failed };

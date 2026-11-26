@@ -96,6 +96,7 @@ const toAnnouncement = (r: Row): AnnouncementRecord => ({
   status: r.status === 'published' ? 'published' : 'draft',
   publishedAt: opt(r.published_at),
   sentCount: n(r.sent_count),
+  unsentCount: n(r.unsent_count),
   audience:
     r.audience === 'booked' || r.audience === 'imported' || r.audience === 'all'
       ? r.audience

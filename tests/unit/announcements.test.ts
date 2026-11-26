@@ -275,6 +275,7 @@ describe('publishing and sending', () => {
     expect(failed).toHaveLength(1);
     expect(failed[0]?.attempts).toBe(3);
     expect((await db.announcementById(id))?.sentCount).toBe(1);
+    expect((await db.announcementById(id))?.unsentCount).toBe(1);
   });
 
   it('unsubscribes from the link, skips what was queued, and leaves them out next time', async () => {
@@ -749,6 +750,62 @@ describe('review fixes', () => {
     });
     expect(claims.every((n) => n === 1)).toBe(true);
     expect(mailer.sent).toHaveLength(2);
+  });
+
+  it('counts emails closed without delivery, so a finished run reads as finished', async () => {
+    const id = await fresh(['a@x.co', 'b@x.co', 'c@x.co']);
+    // b unsubscribes after publishing; c's send is refused for good.
+    const b = db.outbox.find((o) => o.email === 'b@x.co');
+    await db.unsubscribe(b?.unsubToken ?? '');
+    const picky = {
+      kind: 'picky',
+      send: async (m: { to: string }) => {
+        if (m.to === 'c@x.co') throw new Error('mailbox does not exist');
+        await mailer.send(m as Parameters<MemoryMailer['send']>[0]);
+      },
+      canRetry: () => false,
+    };
+    await processOutbox({
+      db,
+      mailer: picky,
+      siteUrl: 'https://jp.test',
+      limit: 10,
+      dailyLimit: 99,
+    });
+    const a = await db.announcementById(id);
+    expect(a?.recipients).toBe(3);
+    expect(a?.sentCount).toBe(1);
+    expect(a?.unsentCount).toBe(2);
+    expect((await db.listAnnouncements()).find((x) => x.id === id)?.unsentCount).toBe(2);
+  });
+
+  it('does not start an email whose preparation ran past the time budget', async () => {
+    await fresh(['a@x.co', 'b@x.co']);
+    let clock = 1_000_000;
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => clock);
+    try {
+      // The announcement lookup is slow: it ends after the 100 ms budget.
+      const lookup = db.announcementById.bind(db);
+      db.announcementById = async (id) => {
+        clock += 200;
+        return lookup(id);
+      };
+      expect(
+        await processOutbox({
+          db,
+          mailer,
+          siteUrl: 'https://jp.test',
+          limit: 10,
+          dailyLimit: 99,
+          timeBudgetMs: 100,
+        }),
+      ).toEqual({ sent: 0, failed: 0 });
+    } finally {
+      now.mockRestore();
+    }
+    // Nothing went out, and the email waits for the next run without using an attempt.
+    expect(mailer.sent).toHaveLength(0);
+    expect(db.outbox.every((o) => o.status === 'pending' && o.attempts === 0)).toBe(true);
   });
 
   it('lists an event already under way as starting today, newest first on the same day', async () => {

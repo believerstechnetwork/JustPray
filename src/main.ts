@@ -562,11 +562,25 @@ async function annAction(action: string, el: HTMLElement): Promise<void> {
     case 'ann-publish': {
       if (S.busy) return;
       S.busy = true;
-      const id = await saveAnnouncement();
+      // Publishing sends what was saved, so the dialog only opens once the saved draft matches
+      // the form. The fields stay editable while a save is on its way: if anything changed
+      // meanwhile, save again (a few times at most) before asking.
+      let id: number | null = null;
+      let stable = false;
+      for (let i = 0; i < 3 && !stable; i++) {
+        syncAnnForm();
+        const saving = JSON.stringify(a.form);
+        id = await saveAnnouncement();
+        if (id === null) break;
+        syncAnnForm();
+        stable = JSON.stringify(a.form) === saving;
+      }
       S.busy = false;
-      if (id !== null) {
+      if (id !== null && stable) {
         a.confirming = true;
         a.send = { booked: true, imported: true };
+      } else if (id !== null) {
+        a.notice = 'Saved. Press Publish again once you have finished editing.';
       }
       render();
       // Into the dialog, so keyboard and screen-reader users start there.
@@ -574,12 +588,17 @@ async function annAction(action: string, el: HTMLElement): Promise<void> {
       return;
     }
     case 'ann-cancel':
+      // Publishing can't be called back once it has started; the dialog closes when it is done.
+      if (S.busy) return;
       a.confirming = false;
       render();
       document.getElementById('ann-publish-btn')?.focus();
       return;
     case 'ann-confirm': {
       if (S.busy || typeof a.editing !== 'number') return;
+      // Keep the editor that asked: the list always gets the published entry, but the editor,
+      // dialog and notices change only if that editor is still the one open.
+      const editor = annEditor;
       S.busy = true;
       render();
       try {
@@ -587,19 +606,22 @@ async function annAction(action: string, el: HTMLElement): Promise<void> {
           a.send.booked && a.send.imported ? 'all' : a.send.booked ? 'booked' : 'imported';
         const { announcement } = await api.publishAnnouncement(a.editing, scope);
         a.list = (a.list ?? []).map((x) => (x.id === announcement.id ? announcement : x));
+        void refreshUpcoming();
+        S.busy = false;
+        if (editor !== annEditor) return render();
         a.confirming = false;
         a.editing = null;
         a.notice = `Published. Emailing ${announcement.recipients} people.`;
-        void refreshUpcoming();
         freshForm = true;
-        S.busy = false;
         render();
         const row = page.querySelector('.ann-row');
         if (row) burst(row, { count: 48, spread: 240 });
         return;
       } catch (e) {
-        a.error = errorMessage(e);
-        a.confirming = false;
+        if (editor === annEditor) {
+          a.error = errorMessage(e);
+          a.confirming = false;
+        }
       }
       S.busy = false;
       return render();

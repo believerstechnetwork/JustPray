@@ -88,6 +88,8 @@ create table if not exists public.announcements (
   status text not null default 'draft' check (status in ('draft', 'published')),
   published_at timestamptz,
   sent_count integer not null default 0,
+  -- Emails closed without delivery: failed for good, or skipped because the person unsubscribed.
+  unsent_count integer not null default 0,
   recipients integer not null default 0,
   audience text check (audience in ('all', 'booked', 'imported')),
   -- The email exactly as published; every batch sends this, so later edits to the published
@@ -148,6 +150,39 @@ create index if not exists announcement_sends_pending
   on public.announcement_sends (id) where status = 'pending';
 create index if not exists announcement_sends_sent_at
   on public.announcement_sends (sent_at) where sent_at is not null;
+
+-- Keep each announcement's unsent_count in step with its sends, whichever step closes one as
+-- failed or skipped (a send, a run that died, an unsubscribe), so the organisers can tell a
+-- finished run with a few undelivered emails from one still going.
+alter table public.announcements add column if not exists unsent_count integer not null default 0;
+create or replace function public.count_unsent_announcement_send()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if new.status in ('failed', 'skipped') and old.status not in ('failed', 'skipped') then
+    update public.announcements a set unsent_count = a.unsent_count + 1
+    where a.id = new.announcement_id;
+  elsif old.status in ('failed', 'skipped') and new.status not in ('failed', 'skipped') then
+    update public.announcements a set unsent_count = greatest(0, a.unsent_count - 1)
+    where a.id = new.announcement_id;
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists announcement_sends_unsent on public.announcement_sends;
+create trigger announcement_sends_unsent
+  after update of status on public.announcement_sends
+  for each row execute function public.count_unsent_announcement_send();
+revoke execute on function public.count_unsent_announcement_send() from public, anon, authenticated;
+-- Count the ones closed before this column existed.
+update public.announcements a
+set unsent_count = (
+  select count(*) from public.announcement_sends s
+  where s.announcement_id = a.id and s.status in ('failed', 'skipped')
+)
+where a.status = 'published';
 
 alter table public.announcements enable row level security;
 alter table public.unsubscribes enable row level security;
