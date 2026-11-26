@@ -779,6 +779,34 @@ describe('review fixes', () => {
     expect((await db.listAnnouncements()).find((x) => x.id === id)?.unsentCount).toBe(2);
   });
 
+  it('does not send an email when starting it ran past the time budget', async () => {
+    await fresh(['a@x.co']);
+    let clock = 1_000_000;
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => clock);
+    try {
+      // Switching the email to "sending" is slow: it ends after the 100 ms budget.
+      const begin = db.beginOutbox.bind(db);
+      db.beginOutbox = async (id, token) => {
+        clock += 200;
+        return begin(id, token);
+      };
+      expect(
+        await processOutbox({
+          db,
+          mailer,
+          siteUrl: 'https://jp.test',
+          limit: 10,
+          dailyLimit: 99,
+          timeBudgetMs: 100,
+        }),
+      ).toEqual({ sent: 0, failed: 0 });
+    } finally {
+      now.mockRestore();
+    }
+    expect(mailer.sent).toHaveLength(0);
+    expect(db.outbox.every((o) => o.status === 'pending' && o.attempts === 0)).toBe(true);
+  });
+
   it('does not start an email whose preparation ran past the time budget', async () => {
     await fresh(['a@x.co', 'b@x.co']);
     let clock = 1_000_000;

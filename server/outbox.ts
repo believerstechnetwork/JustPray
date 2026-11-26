@@ -78,14 +78,15 @@ export async function processOutbox(deps: OutboxDeps): Promise<{ sent: number; f
       siteUrl: site,
       unsubscribeUrl,
     });
-    // The lookups above (or the claim itself) may have run past the time budget. Then this email
-    // is not started: it goes back in the queue without using an attempt, and the batch stops.
-    if (timeUp()) {
+    // The claim, the lookups above or starting the send may run past the time budget. Then this
+    // email is not sent: it goes back in the queue without using an attempt, and the batch stops.
+    const giveBack = async (): Promise<Result> => {
       await db
         .finishOutbox(item.id, item.claimToken, 'later', 'Not tried in this run')
         .catch((err: unknown) => log(`Could not requeue outbox item ${item.id}`, err));
       return 'timeUp';
-    }
+    };
+    if (timeUp()) return giveBack();
     // Start sending, in one step that only the run holding the claim can take. A run that stalled
     // past its claim (given back to the queue, or taken by another run) stops here.
     try {
@@ -100,6 +101,8 @@ export async function processOutbox(deps: OutboxDeps): Promise<{ sent: number; f
         .catch((err: unknown) => log(`Could not requeue outbox item ${item.id}`, err));
       return 'failed';
     }
+    // Checked again right before the email goes out, in case starting it was slow.
+    if (timeUp()) return giveBack();
     try {
       await mailer.send({
         ...email,
