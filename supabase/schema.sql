@@ -224,10 +224,13 @@ begin
   set status = 'skipped'
   where s.status = 'pending'
     and exists (select 1 from public.unsubscribes u where u.email = s.email);
-  -- Emails being sent right now count toward today's limit too.
+  -- Emails being sent right now, and failed ones claimed in the last 24 hours (a run that died
+  -- or a timeout may still have delivered them), count toward today's limit too.
   select count(*) into sent_today
   from public.announcement_sends s
-  where s.sent_at > now() - interval '24 hours' or s.status = 'sending';
+  where s.sent_at > now() - interval '24 hours'
+     or s.status = 'sending'
+     or (s.status = 'failed' and s.claimed_at > now() - interval '24 hours');
   take := greatest(0, least(p_limit, p_daily - sent_today));
   return query
     update public.announcement_sends s
@@ -243,14 +246,18 @@ begin
 end;
 $$;
 
--- Record one send: sent (and counted); skipped (unsubscribed); or back in the queue, failing
--- after 3 attempts. Only a row still claimed for sending changes.
+-- Record what happened to one claimed email:
+--   sent     delivered, and counted on the announcement;
+--   retry    nothing went out: back in the queue, failed after 3 attempts in all;
+--   failed   closed and never retried (it may have gone out, or can never go);
+--   skipped  closed unsent, because the person unsubscribed.
+-- Only a row still claimed for sending changes.
 drop function if exists public.finish_announcement_send(bigint, boolean, text);
+drop function if exists public.finish_announcement_send(bigint, boolean, text, boolean);
 create or replace function public.finish_announcement_send(
   p_id bigint,
-  p_ok boolean,
-  p_error text,
-  p_skip boolean default false
+  p_outcome text,
+  p_error text default null
 )
 returns void
 language plpgsql
@@ -259,10 +266,7 @@ as $$
 declare
   ann bigint;
 begin
-  if p_skip then
-    update public.announcement_sends s set status = 'skipped', error = left(p_error, 200)
-    where s.id = p_id and s.status = 'sending';
-  elsif p_ok then
+  if p_outcome = 'sent' then
     update public.announcement_sends s
     set status = 'sent', sent_at = now(), attempts = s.attempts + 1, error = null
     where s.id = p_id and s.status = 'sending'
@@ -270,12 +274,21 @@ begin
     if ann is not null then
       update public.announcements a set sent_count = a.sent_count + 1 where a.id = ann;
     end if;
-  else
+  elsif p_outcome = 'skipped' then
+    update public.announcement_sends s set status = 'skipped', error = left(p_error, 200)
+    where s.id = p_id and s.status = 'sending';
+  elsif p_outcome = 'retry' then
     update public.announcement_sends s
     set attempts = s.attempts + 1,
         error = left(p_error, 200),
         status = case when s.attempts + 1 >= 3 then 'failed' else 'pending' end
     where s.id = p_id and s.status = 'sending';
+  elsif p_outcome = 'failed' then
+    update public.announcement_sends s
+    set attempts = s.attempts + 1, error = left(p_error, 200), status = 'failed'
+    where s.id = p_id and s.status = 'sending';
+  else
+    raise exception 'Unknown send outcome: %', p_outcome;
   end if;
 end;
 $$;
@@ -365,7 +378,7 @@ $$;
 revoke execute on function public.updates_audience(text, text, integer) from public, anon, authenticated;
 revoke execute on function public.publish_announcement(bigint, text) from public, anon, authenticated;
 revoke execute on function public.claim_announcement_sends(integer, integer) from public, anon, authenticated;
-revoke execute on function public.finish_announcement_send(bigint, boolean, text, boolean) from public, anon, authenticated;
+revoke execute on function public.finish_announcement_send(bigint, text, text) from public, anon, authenticated;
 revoke execute on function public.unsubscribe_by_token(text) from public, anon, authenticated;
 revoke execute on function public.import_contacts(jsonb, text) from public, anon, authenticated;
 revoke execute on function public.resubscribe_by_token(text) from public, anon, authenticated;
@@ -375,7 +388,7 @@ grant execute on function public.subscription_by_token(text) to service_role;
 grant execute on function public.updates_audience(text, text, integer) to service_role;
 grant execute on function public.publish_announcement(bigint, text) to service_role;
 grant execute on function public.claim_announcement_sends(integer, integer) to service_role;
-grant execute on function public.finish_announcement_send(bigint, boolean, text, boolean) to service_role;
+grant execute on function public.finish_announcement_send(bigint, text, text) to service_role;
 grant execute on function public.unsubscribe_by_token(text) to service_role;
 grant execute on function public.import_contacts(jsonb, text) to service_role;
 

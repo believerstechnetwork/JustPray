@@ -45,16 +45,20 @@ export function devApiMiddleware(): Connect.NextHandleFunction {
     log: (m, e) => console.warn(`[dev api] ${m}`, e ?? ''),
   };
 
-  // Stand-in for the scheduled sender: work through queued announcement emails locally.
+  // Stand-in for the scheduled sender: work through queued announcement emails locally. Links
+  // in them point at the address the site is being served from (port included), the same
+  // origin the API uses for the first batch it sends right after publishing.
+  let origin = 'http://localhost:5173';
   if (deps.db && deps.mailer) {
     const { db, mailer } = deps;
     setInterval(() => {
-      void processOutbox({ db, mailer, siteUrl: 'http://localhost', limit: 20, dailyLimit: 350 });
+      void processOutbox({ db, mailer, siteUrl: origin, limit: 20, dailyLimit: 350 });
     }, 3000).unref();
   }
 
   return (req, res, next) => {
     if (!req.url?.startsWith('/api/')) return next();
+    if (req.headers.host) origin = `http://${req.headers.host}`;
     // Local only: the emails "sent" so far, so end-to-end tests can follow their links.
     if (req.url === '/api/dev/mail') {
       res.setHeader('Content-Type', 'application/json');

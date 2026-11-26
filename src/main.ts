@@ -196,9 +196,12 @@ async function loadCancel(token: string): Promise<void> {
 async function preferences(action?: 'unsubscribe' | 'resubscribe'): Promise<void> {
   const u = S.unsub;
   const token = u.token;
+  // Only an action holds the busy flag; a lookup never takes it, so it never clears another
+  // operation's.
+  let ownsBusy = false;
   if (action) {
     if (S.busy) return;
-    S.busy = true;
+    S.busy = ownsBusy = true;
     u.error = '';
     render();
   }
@@ -211,9 +214,11 @@ async function preferences(action?: 'unsubscribe' | 'resubscribe'): Promise<void
     if (S.unsub.token !== token) return;
     if (u.load === 'ready') u.error = errorMessage(e);
     else Object.assign(u, { load: 'error', error: errorMessage(e) });
+  } finally {
+    // Released even when the answer arrives for a link the page has since left.
+    if (ownsBusy) S.busy = false;
+    if (S.page === 'unsubscribe') render();
   }
-  S.busy = false;
-  if (S.page === 'unsubscribe') render();
 }
 
 /** Read a chosen Excel or CSV file in the browser, for the organiser to check before importing. */
@@ -440,9 +445,10 @@ async function saveAnnouncement(): Promise<number | null> {
         : await api.createAnnouncement(S.ann.form);
     const list = S.ann.list ?? [];
     S.ann.list = [announcement, ...list.filter((x) => x.id !== announcement.id)];
+    // The home page shows published events, so refresh it whichever editor is open now.
+    if (announcement.status === 'published') void refreshUpcoming();
     if (editor !== annEditor) return null;
     S.ann.editing = announcement.id;
-    if (announcement.status === 'published') void refreshUpcoming();
     return announcement.id;
   } catch (e) {
     if (editor === annEditor) S.ann.error = errorMessage(e);
@@ -456,8 +462,10 @@ async function refreshUpcoming(): Promise<void> {
   try {
     S.upcoming = (await api.publicInfo()).upcoming ?? [];
   } catch {
-    /* the next page load picks it up */
+    return; // the next page load picks it up
   }
+  // The organiser may already be back on the home page.
+  if (S.page === 'home') render();
 }
 
 async function annAction(action: string, el: HTMLElement): Promise<void> {
@@ -505,6 +513,7 @@ async function annAction(action: string, el: HTMLElement): Promise<void> {
       return loadAnnouncements();
     case 'ann-retry':
       a.error = '';
+      a.loadFailed = false; // show the spinner, not the error, while it tries again
       render();
       return loadAnnouncements();
     case 'ann-people':

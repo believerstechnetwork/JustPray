@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type {
+  OutboxOutcome,
   AnnouncementFields,
   AnnouncementRecord,
   AudienceMember,
@@ -49,6 +50,7 @@ export class MemoryDb implements Db {
     attempts: number;
     claimedAt: number;
     sentAt: number | null;
+    error: string | null;
   }[] = [];
   private nextId = 1;
   private readonly now: () => Date;
@@ -259,6 +261,7 @@ export class MemoryDb implements Db {
         attempts: 0,
         claimedAt: 0,
         sentAt: null,
+        error: null,
       });
     Object.assign(a, {
       status: 'published',
@@ -274,16 +277,23 @@ export class MemoryDb implements Db {
     // A claim older than 10 minutes belongs to a run that died, maybe after sending: close it as
     // failed rather than risk sending twice.
     for (const o of this.outbox)
-      if (o.status === 'sending' && now - o.claimedAt > 10 * 60_000) {
-        o.status = 'failed';
-        o.attempts++;
-      }
+      if (o.status === 'sending' && now - o.claimedAt > 10 * 60_000)
+        Object.assign(o, {
+          status: 'failed',
+          attempts: o.attempts + 1,
+          error: 'Sending did not finish',
+        });
     // Anyone who unsubscribed since publishing gets nothing more.
     for (const o of this.outbox)
       if (o.status === 'pending' && this.unsubscribed.has(o.email)) o.status = 'skipped';
-    // Emails being sent right now count toward today's limit too.
+    // Emails being sent right now, and failed ones claimed today (they may have gone out),
+    // count toward today's limit too.
+    const day = 86_400_000;
     const sentToday = this.outbox.filter(
-      (o) => (o.sentAt !== null && now - o.sentAt < 86_400_000) || o.status === 'sending',
+      (o) =>
+        (o.sentAt !== null && now - o.sentAt < day) ||
+        o.status === 'sending' ||
+        (o.status === 'failed' && now - o.claimedAt < day),
     ).length;
     const n = Math.max(0, Math.min(limit, dailyLimit - sentToday));
     const claimed = this.outbox.filter((o) => o.status === 'pending').slice(0, n);
@@ -301,19 +311,21 @@ export class MemoryDb implements Db {
     return this.unsubscribed.has(email);
   }
 
-  async finishOutbox(id: number, ok: boolean, _error?: string, skip = false): Promise<void> {
+  async finishOutbox(id: number, outcome: OutboxOutcome, error?: string): Promise<void> {
     const o = this.outbox.find((x) => x.id === id);
     if (!o || o.status !== 'sending') return;
-    if (skip) {
+    o.error = error ? error.slice(0, 200) : null;
+    if (outcome === 'skipped') {
       o.status = 'skipped';
       return;
     }
     o.attempts++;
-    if (ok) {
-      Object.assign(o, { status: 'sent', sentAt: this.now().getTime() });
+    if (outcome === 'sent') {
+      Object.assign(o, { status: 'sent', sentAt: this.now().getTime(), error: null });
       const a = this.announcements.find((x) => x.id === o.announcementId);
       if (a) a.sentCount++;
-    } else o.status = o.attempts >= 3 ? 'failed' : 'pending';
+    } else if (outcome === 'retry') o.status = o.attempts >= 3 ? 'failed' : 'pending';
+    else o.status = 'failed';
   }
 
   async resubscribe(token: string): Promise<string | null> {

@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type {
+  OutboxOutcome,
   AnnouncementFields,
   AnnouncementRecord,
   AudienceMember,
@@ -438,13 +439,12 @@ export class SupabaseDb implements Db {
     }));
   }
 
-  async finishOutbox(id: number, ok: boolean, error?: string, skip = false): Promise<void> {
+  async finishOutbox(id: number, outcome: OutboxOutcome, error?: string): Promise<void> {
     check(
       await this.sb.rpc('finish_announcement_send', {
         p_id: id,
-        p_ok: ok,
+        p_outcome: outcome,
         p_error: error ?? null,
-        p_skip: skip,
       }),
     );
   }

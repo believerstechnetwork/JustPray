@@ -26,17 +26,28 @@ export async function processOutbox(deps: OutboxDeps): Promise<{ sent: number; f
   let sent = 0;
   let failed = 0;
   for (const item of items) {
-    if (!announcements.has(item.announcementId))
-      announcements.set(item.announcementId, await db.announcementById(item.announcementId));
-    const a = announcements.get(item.announcementId);
-    if (!a) {
-      await db.finishOutbox(item.id, false, 'announcement not found');
+    // Before sending: load the announcement and check the person is still subscribed. If either
+    // lookup fails, nothing was sent, so the email goes back in the queue and the batch goes on.
+    let a: AnnouncementRecord | null | undefined;
+    try {
+      if (!announcements.has(item.announcementId))
+        announcements.set(item.announcementId, await db.announcementById(item.announcementId));
+      a = announcements.get(item.announcementId);
+      if (a && (await db.isUnsubscribed(item.email))) {
+        await db.finishOutbox(item.id, 'skipped', 'unsubscribed');
+        continue;
+      }
+    } catch (e) {
+      log(`Could not prepare outbox item ${item.id}; it will be tried again`, e);
+      await db
+        .finishOutbox(item.id, 'retry', 'Could not check the announcement or subscription')
+        .catch((err: unknown) => log(`Could not requeue outbox item ${item.id}`, err));
       failed++;
       continue;
     }
-    // Unsubscribed since this email was queued: do not send it.
-    if (await db.isUnsubscribed(item.email)) {
-      await db.finishOutbox(item.id, false, 'unsubscribed', true);
+    if (!a) {
+      await db.finishOutbox(item.id, 'failed', 'announcement not found');
+      failed++;
       continue;
     }
     const unsubscribeUrl = `${site}/#/unsubscribe/${item.unsubToken}`;
@@ -63,11 +74,21 @@ export async function processOutbox(deps: OutboxDeps): Promise<{ sent: number; f
           'List-Unsubscribe': `<${site}/api/unsubscribe?t=${item.unsubToken}>`,
           'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
         },
+        // A repeat of this exact email is dropped by services that support it (Resend).
+        idempotencyKey: `announcement-send-${item.id}`,
       });
     } catch (e) {
+      // Retry only when the mail service certainly did not take the email. A timeout may come
+      // after it was accepted, so that one is closed as failed rather than risk a second copy.
+      const retry = mailer.canRetry?.(e) ?? false;
       log(`Announcement ${a.id} to outbox item ${item.id} failed (${mailer.kind})`, e);
+      const reason = e instanceof Error ? e.message.slice(0, 160) : 'error';
       await db
-        .finishOutbox(item.id, false, e instanceof Error ? e.message.slice(0, 200) : 'error')
+        .finishOutbox(
+          item.id,
+          retry ? 'retry' : 'failed',
+          retry ? reason : `${reason} (may have been delivered; not retried)`,
+        )
         .catch((err: unknown) => log(`Could not record failure of outbox item ${item.id}`, err));
       failed++;
       continue;
@@ -78,7 +99,7 @@ export async function processOutbox(deps: OutboxDeps): Promise<{ sent: number; f
     sent++;
     for (let attempt = 1; ; attempt++) {
       try {
-        await db.finishOutbox(item.id, true);
+        await db.finishOutbox(item.id, 'sent');
         break;
       } catch (e) {
         if (attempt >= 3) {

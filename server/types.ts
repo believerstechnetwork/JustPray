@@ -172,11 +172,13 @@ export interface Db {
    *  in the same step. Null when unknown or already published. */
   publishAnnouncement(id: number, scope: AudienceScope): Promise<AnnouncementRecord | null>;
   /** Claim up to `limit` queued emails, never more than `dailyLimit` sent in the last 24 hours.
-   *  Emails claimed by a run that died more than 10 minutes ago are claimed again. */
+   *  A claim left by a run that died more than 10 minutes ago is closed as failed, never sent
+   *  again, since the email may have gone out. */
   claimOutbox(limit: number, dailyLimit: number): Promise<OutboxItem[]>;
-  /** Record the result of sending one; a failure is retried up to 3 attempts in all. With
-   *  `skip`, it is closed without sending (the person unsubscribed). */
-  finishOutbox(id: number, ok: boolean, error?: string, skip?: boolean): Promise<void>;
+  /** Record what happened to one claimed email: `sent`; `retry` (nothing went out: back in the
+   *  queue, failed after 3 attempts in all); `failed` (closed, never retried, because it may
+   *  have gone out or can never go); or `skipped` (closed unsent: the person unsubscribed). */
+  finishOutbox(id: number, outcome: OutboxOutcome, error?: string): Promise<void>;
   isUnsubscribed(email: string): Promise<boolean>;
   /** Unsubscribe the person behind an unsubscribe link. Returns their email, or null. */
   unsubscribe(token: string): Promise<string | null>;
@@ -202,10 +204,15 @@ export interface Email {
   html: string;
   /** Extra headers, e.g. List-Unsubscribe on announcements. */
   headers?: Record<string, string>;
+  /** The same key on a repeat makes Resend drop it instead of sending the email twice. */
+  idempotencyKey?: string;
 }
 
 /** Who an announcement goes to: people who booked and asked for updates, imported people, or both. */
 export type AudienceScope = 'all' | 'booked' | 'imported';
+
+/** What happened to one queued announcement email. See Db.finishOutbox. */
+export type OutboxOutcome = 'sent' | 'retry' | 'failed' | 'skipped';
 export const AUDIENCE_SCOPES: readonly AudienceScope[] = ['all', 'booked', 'imported'];
 
 /** Someone who gets announcements, and how they joined the list. */
@@ -239,6 +246,9 @@ export interface Mailer {
   /** Name used in logs, e.g. "gmail". */
   readonly kind: string;
   send(email: Email): Promise<void>;
+  /** True when a failed send certainly delivered nothing (or the service drops repeats), so
+   *  sending it again cannot reach the person twice. Without it, a failed send is never retried. */
+  canRetry?(error: unknown): boolean;
 }
 
 export interface BankDetails {

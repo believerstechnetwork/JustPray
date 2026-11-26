@@ -37,7 +37,27 @@ export class GmailMailer implements Mailer {
   }
 
   async send(email: Email): Promise<void> {
-    await this.transport.sendMail({ from: this.from, replyTo: this.replyTo, ...email });
+    // Gmail has no idempotency keys, so the key is not passed on.
+    const { to, subject, text, html, headers } = email;
+    await this.transport.sendMail({
+      from: this.from,
+      replyTo: this.replyTo,
+      to,
+      subject,
+      text,
+      html,
+      headers,
+    });
+  }
+
+  /** Safe to send again only when Gmail refused the message (it answered with an SMTP code) or
+   *  it never got that far (sign-in, address or DNS failure). A timeout or a dropped connection
+   *  may come after Gmail accepted it, so those are not retried. */
+  canRetry(error: unknown): boolean {
+    const e = (error ?? {}) as { responseCode?: unknown; code?: unknown };
+    return (
+      typeof e.responseCode === 'number' || ['EAUTH', 'EDNS', 'EENVELOPE'].includes(String(e.code))
+    );
   }
 }
 
@@ -53,7 +73,11 @@ export class ResendMailer implements Mailer {
   async send(email: Email): Promise<void> {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json',
+        ...(email.idempotencyKey ? { 'Idempotency-Key': email.idempotencyKey } : {}),
+      },
       body: JSON.stringify({
         from: this.from,
         to: [email.to],
@@ -68,6 +92,12 @@ export class ResendMailer implements Mailer {
     });
     if (!res.ok) throw new Error(`Resend returned HTTP ${res.status}`);
   }
+
+  /** Resend drops a repeat with the same idempotency key (kept for 24 hours), so a retry after
+   *  any failure, a timeout included, cannot send the email twice. */
+  canRetry(): boolean {
+    return true;
+  }
 }
 
 /** Keeps emails in memory. Used in tests and local development. */
@@ -76,6 +106,10 @@ export class MemoryMailer implements Mailer {
   sent: Email[] = [];
   async send(email: Email): Promise<void> {
     this.sent.push(email);
+  }
+
+  canRetry(): boolean {
+    return true;
   }
 }
 

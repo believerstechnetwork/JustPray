@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { announcementEmail } from '../../server/emails';
 import { handleApi, type ApiDeps } from '../../server/api';
 import { createSession } from '../../server/auth';
-import { MemoryMailer, ResendMailer } from '../../server/mailer';
+import { GmailMailer, MemoryMailer, ResendMailer } from '../../server/mailer';
 import { MemoryDb } from '../../server/memory-db';
 import { processOutbox } from '../../server/outbox';
 import { parseCsv, rowsToContacts } from '../../src/lib/contacts';
@@ -256,7 +256,12 @@ describe('publishing and sending', () => {
       (await processOutbox({ db, mailer, siteUrl: 'https://jp.test', limit: 20, dailyLimit: 1 }))
         .sent,
     ).toBe(0);
-    const broken = { kind: 'broken', send: () => Promise.reject(new Error('smtp')) };
+    // A refusal the mail service answered (so nothing went out) may be tried again.
+    const broken = {
+      kind: 'broken',
+      send: () => Promise.reject(new Error('smtp')),
+      canRetry: () => true,
+    };
     for (let i = 0; i < 4; i++)
       await processOutbox({
         db,
@@ -265,7 +270,9 @@ describe('publishing and sending', () => {
         limit: 20,
         dailyLimit: 99,
       });
-    expect(db.outbox.filter((o) => o.status === 'failed')).toHaveLength(1);
+    const failed = db.outbox.filter((o) => o.status === 'failed');
+    expect(failed).toHaveLength(1);
+    expect(failed[0]?.attempts).toBe(3);
     expect((await db.announcementById(id))?.sentCount).toBe(1);
   });
 
@@ -413,6 +420,116 @@ describe('review fixes', () => {
     });
   });
 
+  it('sends an idempotency key to Resend, so a retried email is never delivered twice', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const resend = new ResendMailer('key', 'Just Pray <hi@x.co>');
+    await resend.send({ to: 'a@b.co', subject: 's', text: 't', html: 'h', idempotencyKey: 'k-1' });
+    const init = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1];
+    expect((init.headers as Record<string, string>)['Idempotency-Key']).toBe('k-1');
+    expect(JSON.parse(String(init.body))).not.toHaveProperty('idempotencyKey');
+    expect(resend.canRetry()).toBe(true);
+  });
+
+  it('retries a Gmail failure only when Gmail certainly did not take the email', () => {
+    const gmail = new GmailMailer('me@gmail.com', 'app password');
+    expect(gmail.canRetry(Object.assign(new Error('450 busy'), { responseCode: 450 }))).toBe(true);
+    expect(gmail.canRetry(Object.assign(new Error('bad login'), { code: 'EAUTH' }))).toBe(true);
+    // A timeout or dropped connection may come after Gmail accepted it.
+    expect(gmail.canRetry(Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' }))).toBe(false);
+    expect(gmail.canRetry(Object.assign(new Error('closed'), { code: 'ECONNECTION' }))).toBe(false);
+    expect(gmail.canRetry(new Error('unknown'))).toBe(false);
+  });
+
+  it('never retries a send that may have been delivered', async () => {
+    const id = (
+      await db.createAnnouncement({
+        ...ANN,
+        endDate: null,
+        time: null,
+        theme: null,
+        imageUrl: null,
+        linkUrl: null,
+        linkLabel: null,
+      })
+    ).id;
+    db.contacts.push({ name: 'A', email: 'a@x.co', source: 'Sheet' });
+    await db.publishAnnouncement(id, 'imported');
+    let tries = 0;
+    const flaky = {
+      kind: 'flaky',
+      send: () => {
+        tries++;
+        return Promise.reject(new Error('timeout'));
+      },
+      canRetry: () => false,
+    };
+    for (let i = 0; i < 3; i++)
+      await processOutbox({
+        db,
+        mailer: flaky,
+        siteUrl: 'https://jp.test',
+        limit: 10,
+        dailyLimit: 99,
+      });
+    expect(tries).toBe(1);
+    expect(db.outbox[0]).toMatchObject({ status: 'failed', attempts: 1 });
+    expect(db.outbox[0]?.error).toMatch(/may have been delivered/);
+    // It still counts toward today's limit.
+    db.contacts.push({ name: 'B', email: 'b@x.co', source: 'Sheet' });
+    const id2 = (
+      await db.createAnnouncement({
+        ...ANN,
+        endDate: null,
+        time: null,
+        theme: null,
+        imageUrl: null,
+        linkUrl: null,
+        linkLabel: null,
+      })
+    ).id;
+    await db.publishAnnouncement(id2, 'imported');
+    expect(await db.claimOutbox(10, 1)).toHaveLength(0);
+  });
+
+  it('puts an email back in the queue when the subscription check fails, and sends the rest', async () => {
+    const id = (
+      await db.createAnnouncement({
+        ...ANN,
+        endDate: null,
+        time: null,
+        theme: null,
+        imageUrl: null,
+        linkUrl: null,
+        linkLabel: null,
+      })
+    ).id;
+    for (const e of ['a@x.co', 'b@x.co']) db.contacts.push({ name: 'A', email: e, source: 'S' });
+    await db.publishAnnouncement(id, 'imported');
+    const realCheck = db.isUnsubscribed.bind(db);
+    db.isUnsubscribed = async (email) => {
+      if (email === 'a@x.co') throw new Error('db blip');
+      return realCheck(email);
+    };
+    const res = await processOutbox({
+      db,
+      mailer,
+      siteUrl: 'https://jp.test',
+      limit: 10,
+      dailyLimit: 99,
+    });
+    expect(res).toEqual({ sent: 1, failed: 1 });
+    expect(mailer.sent.map((m) => m.to)).toEqual(['b@x.co']);
+    expect(db.outbox.find((o) => o.email === 'a@x.co')).toMatchObject({
+      status: 'pending',
+      attempts: 1,
+    });
+    // Next run, with the database back, sends it.
+    db.isUnsubscribed = realCheck;
+    await processOutbox({ db, mailer, siteUrl: 'https://jp.test', limit: 10, dailyLimit: 99 });
+    expect(mailer.sent.map((m) => m.to)).toEqual(['b@x.co', 'a@x.co']);
+  });
+
   it('skips a claimed email if the person unsubscribed before it went out', async () => {
     const id = (
       await db.createAnnouncement({
@@ -452,9 +569,9 @@ describe('review fixes', () => {
     db.contacts.push({ name: 'A', email: 'a@x.co', source: 'Sheet' });
     await db.publishAnnouncement(id, 'imported');
     const realFinish = db.finishOutbox.bind(db);
-    db.finishOutbox = async (i, ok, e, skip) => {
-      if (ok) throw new Error('db down');
-      return realFinish(i, ok, e, skip);
+    db.finishOutbox = async (i, outcome, e) => {
+      if (outcome === 'sent') throw new Error('db down');
+      return realFinish(i, outcome, e);
     };
     await processOutbox({ db, mailer, siteUrl: 'https://jp.test', limit: 10, dailyLimit: 99 });
     expect(mailer.sent).toHaveLength(1);
@@ -464,8 +581,23 @@ describe('review fixes', () => {
     await processOutbox({ db, mailer, siteUrl: 'https://jp.test', limit: 10, dailyLimit: 99 });
     db.outbox[0]!.claimedAt -= 11 * 60_000;
     await processOutbox({ db, mailer, siteUrl: 'https://jp.test', limit: 10, dailyLimit: 99 });
-    expect(db.outbox[0]?.status).toBe('failed');
+    expect(db.outbox[0]).toMatchObject({ status: 'failed', error: 'Sending did not finish' });
     expect(mailer.sent).toHaveLength(1);
+    // That uncertain email still counts toward today's limit.
+    db.contacts.push({ name: 'B', email: 'b@x.co', source: 'Sheet' });
+    const id2 = (
+      await db.createAnnouncement({
+        ...ANN,
+        endDate: null,
+        time: null,
+        theme: null,
+        imageUrl: null,
+        linkUrl: null,
+        linkLabel: null,
+      })
+    ).id;
+    await db.publishAnnouncement(id2, 'imported');
+    expect(await db.claimOutbox(10, 1)).toHaveLength(0);
   });
 
   it('counts emails being sent toward the daily limit', async () => {
