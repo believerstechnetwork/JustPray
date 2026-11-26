@@ -122,8 +122,9 @@ export interface AnnouncementRecord extends AnnouncementFields {
   publishedAt: string | null;
   /** Emails delivered so far. */
   sentCount: number;
-  /** Emails closed without delivery: failed for good, or skipped because the person
-   *  unsubscribed. Sending is finished once sentCount + unsentCount reaches recipients. */
+  /** Emails closed without a confirmed delivery: failed (some may still have arrived, such as
+   *  after a timeout), or skipped because the person unsubscribed. Sending is finished once
+   *  sentCount + unsentCount reaches recipients. */
   unsentCount: number;
   /** Who it was sent to, once published. */
   audience: AudienceScope | null;

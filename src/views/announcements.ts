@@ -133,12 +133,14 @@ const num = (n: number): string => n.toLocaleString('en-GB');
 const sending = (x: Announcement): boolean => x.sentCount + (x.unsentCount ?? 0) < x.recipients;
 
 /** "Sending: 120 of 412 people" while the outbox works through it, then "Emailed to 412 people",
- *  or "Emailed 410 of 412 people · 2 not sent" when some failed or had unsubscribed. */
+ *  or "Emailed 410 of 412 people · 2 not confirmed" when some had unsubscribed or failed (a
+ *  failed send may still have been delivered, for example after a timeout, so it is not
+ *  called "not sent"). */
 const progress = (x: Announcement): string => {
   const unsent = x.unsentCount ?? 0;
   if (sending(x)) return `Sending: ${num(x.sentCount)} of ${people(x.recipients)}`;
   return unsent > 0
-    ? `Emailed ${num(x.sentCount)} of ${people(x.recipients)} · ${num(unsent)} not sent`
+    ? `Emailed ${num(x.sentCount)} of ${people(x.recipients)} · ${num(unsent)} not confirmed`
     : `Emailed to ${people(x.recipients)}`;
 };
 

@@ -48,7 +48,8 @@ export interface Announcement extends Omit<UpcomingEvent, 'id'> {
   status: 'draft' | 'published';
   publishedAt: string | null;
   sentCount: number;
-  /** Emails closed without delivery (failed, or the person unsubscribed). */
+  /** Emails closed without a confirmed delivery: failed (some may still have arrived, such as
+   *  after a timeout), or skipped because the person unsubscribed. */
   unsentCount: number;
   recipients: number;
   audience: AudienceScope | null;
