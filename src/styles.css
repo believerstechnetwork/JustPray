@@ -1593,8 +1593,37 @@ html[data-mode='dark'] .share .x {
   .brand .sep {
     display: none;
   }
+  /* Phones: the booking slip comes straight after the headline, before the photo,
+     so booking needs no scrolling. */
   .hero {
     padding-bottom: 28px;
+    display: flex;
+    flex-direction: column;
+  }
+  .hero-body {
+    display: contents;
+  }
+  .hero-copy {
+    order: 1;
+    padding: 12px 20px 0;
+  }
+  .hero h1 {
+    font-size: 48px;
+  }
+  .hero .lede {
+    font-size: 17px;
+    margin-top: 14px;
+  }
+  .hero .link {
+    margin-top: 6px;
+  }
+  .hero .slip {
+    order: 2;
+    margin-top: 16px;
+  }
+  .hero-photo {
+    order: 3;
+    margin: 24px 20px 0;
   }
   .hero-body,
   .head-body,
@@ -1627,8 +1656,17 @@ html[data-mode='dark'] .share .x {
   .slip {
     margin: 24px 20px 0;
     grid-template-columns: 1fr;
-    gap: 14px;
-    padding: 20px;
+    gap: 10px;
+    padding: 18px 18px 20px;
+  }
+  .slip h2 {
+    font-size: 23px;
+  }
+  .slip .field label {
+    margin-bottom: 5px;
+  }
+  .slip .field input {
+    height: 48px;
   }
   .when,
   .do,
