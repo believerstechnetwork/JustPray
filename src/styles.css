@@ -2042,7 +2042,8 @@ html[data-mode='dark'] .prefs {
 }
 .pill.on {
   background: #e3f4ea;
-  color: var(--ok);
+  /* Darker than --ok so the small label reads at 5.8:1 on its pale green (WCAG AA). */
+  color: #186a43;
 }
 .pill.off {
   background: var(--mute-t);
@@ -2050,6 +2051,7 @@ html[data-mode='dark'] .prefs {
 }
 html[data-mode='dark'] .pill.on {
   background: #123a2a;
+  color: var(--ok);
 }
 .prefs .err {
   margin-top: 12px;

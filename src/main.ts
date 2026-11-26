@@ -496,6 +496,8 @@ async function annAction(action: string, el: HTMLElement): Promise<void> {
     a.editing = x.id;
     a.form = { ...x };
     a.error = a.notice = '';
+    // A dialog left open for another editor must never reappear over this one.
+    a.confirming = false;
     annEditor++;
     freshForm = true;
     return render();
@@ -520,11 +522,13 @@ async function annAction(action: string, el: HTMLElement): Promise<void> {
       a.editing = 'new';
       a.form = blankAnnouncement();
       a.error = a.notice = '';
+      a.confirming = false;
       annEditor++;
       freshForm = true;
       return render();
     case 'ann-back':
       annEditor++;
+      a.confirming = false;
       a.editing = null;
       a.panel = 'list';
       a.importing = null;
@@ -624,7 +628,10 @@ async function annAction(action: string, el: HTMLElement): Promise<void> {
         annChanges++;
         void refreshUpcoming();
         S.busy = false;
-        if (editor !== annEditor) return render();
+        if (editor !== annEditor) {
+          a.confirming = false;
+          return render();
+        }
         a.confirming = false;
         a.editing = null;
         a.notice = `Published. Emailing ${announcement.recipients} people.`;
@@ -734,6 +741,7 @@ document.addEventListener('click', async (e) => {
     if (S.tab === 'announcements') {
       annEditor++;
       S.ann.editing = null;
+      S.ann.confirming = false;
       S.ann.panel = 'list';
       S.ann.importing = null;
       void loadAnnouncements();

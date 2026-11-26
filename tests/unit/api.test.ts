@@ -133,6 +133,24 @@ describe('public API', () => {
     expect(mailer.sent).toHaveLength(1);
   });
 
+  it('never re-sends a confirmation that may have gone out (a timeout or aborted send)', async () => {
+    // The send was cut off after Gmail may have taken it: not a certain failure.
+    deps.mailer = {
+      kind: 'gmail',
+      send: () => Promise.reject(Object.assign(new Error('aborted'), { code: 'EABORT' })),
+      canRetry: () => false,
+    };
+    await call('POST', '/api/reserve', person('ada@example.com'));
+    await Promise.all(deferred);
+    expect(db.reservations[0]).toMatchObject({ emailSentAt: null, emailFailedAt: null });
+    // Booking again does not send a second copy with a different cancel link.
+    deps.mailer = mailer;
+    const { data } = await call('POST', '/api/reserve', person('ada@example.com'));
+    expect(data.emailQueued).toBe(false);
+    await Promise.all(deferred);
+    expect(mailer.sent).toHaveLength(0);
+  });
+
   it('still reserves when email is not configured', async () => {
     deps.mailer = null;
     const { status, data } = await call('POST', '/api/reserve', person('a@b.co'));

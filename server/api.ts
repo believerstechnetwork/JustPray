@@ -369,10 +369,14 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
           reservationEmail({ name, email, seat, code, event, eventId, siteUrl, cancelUrl: link }),
         );
       } catch (e) {
-        // Only a failure that is recorded lets a later booking attempt re-send the email.
-        await db()
-          .markEmailFailed(held.id, hash)
-          .catch(() => undefined);
+        // Only a failure that is recorded lets a later booking attempt re-send the email (with a
+        // new cancel link). Record it only when the mail service certainly did not take the email:
+        // after a timeout or an aborted send it may already be in the inbox, and a second copy
+        // would carry a different cancel link. Those stay unrecorded, so they are never re-sent.
+        if (mailer.canRetry ? mailer.canRetry(e) : true)
+          await db()
+            .markEmailFailed(held.id, hash)
+            .catch(() => undefined);
         throw e;
       }
       // Tied to this email's token: if the seat was cancelled and booked again meanwhile, the
